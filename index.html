@@ -39,6 +39,13 @@
             <div class="jp big">桜</div>
             <h2 id="overlay-title">טטריס עץ</h2>
             <p id="overlay-text">נקו שורות ותנו לפריחת הדובדבן להתפוצץ על המסך</p>
+            <ul class="touch-hint">
+              <li>גרירה לצדדים: הזזה</li>
+              <li>הקשה: סיבוב</li>
+              <li>גרירה למטה: ירידה רכה</li>
+              <li>החלקה מהירה למטה: הפלה</li>
+              <li>החלקה למעלה: החזקה</li>
+            </ul>
             <button id="start-btn" type="button">התחל</button>
           </div>
         </div>
@@ -59,9 +66,13 @@
         <li><kbd>↓</kbd> ירידה רכה</li>
         <li><kbd>רווח</kbd> הפלה</li>
         <li><kbd>C</kbd> החזקה</li>
-        <li><kbd>P</kbd> השהיה · <kbd>M</kbd> צליל</li>
+        <li><kbd>P</kbd> השהיה</li>
+        <li><kbd>B</kbd> מוזיקה · <kbd>M</kbd> השתקה</li>
       </ul>
-      <button id="mute-btn" class="small-btn" type="button">🔊 צליל</button>
+      <div class="btn-row">
+        <button id="music-btn" class="small-btn" type="button">🎵 מוזיקה: פועלת</button>
+        <button id="mute-btn" class="small-btn" type="button">🔊 צליל</button>
+      </div>
     </section>
   </main>
 
@@ -73,6 +84,7 @@
     <button data-act="rotate" type="button">⟳</button>
     <button data-act="drop" type="button">⤓</button>
     <button data-act="pause" type="button">❚❚</button>
+    <button data-act="music" type="button">♪</button>
   </nav>
 
   <canvas id="fx" aria-hidden="true"></canvas>

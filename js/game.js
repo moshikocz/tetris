@@ -511,11 +511,314 @@
       o.stop(t + 1.2); o2.stop(t + 1.2);
     },
     clear(n) {
-      // Hirajoshi-ish scale on D
-      const scale = [293.66, 311.13, 392.0, 440.0, 466.16, 587.33, 622.25, 783.99, 880.0, 932.33];
+      // C major pentatonic, in key with the music
+      const scale = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51, 1567.98, 1760.0];
       const count = n === 4 ? 9 : n + 2;
       const step = n === 4 ? 0.06 : 0.08;
       for (let i = 0; i < count; i++) this.pluck(scale[i % scale.length], i * step);
+    },
+  };
+
+  // ---------------------------------------------------------------------------
+  // Music: an upbeat anime-opening style loop, synthesized live with Web Audio.
+  // Royal-road progression (IV-V-iii-vi), driving 8th-note bass, drums, arps
+  // and a lead melody with echo. Verse then chorus, 16 bars, looped.
+  // ---------------------------------------------------------------------------
+  const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+  const CHORDS = {
+    F: { bass: 41, notes: [53, 57, 60, 64] },
+    G: { bass: 43, notes: [55, 59, 62, 67] },
+    Em: { bass: 40, notes: [52, 55, 59, 62] },
+    Am: { bass: 45, notes: [57, 60, 64, 67] },
+    C: { bass: 36, notes: [55, 60, 64, 67] },
+  };
+  const PROGRESSION = ['F', 'G', 'Em', 'Am', 'F', 'G', 'C', 'C'];
+
+  // [step, midi, length in 16th steps] per bar
+  const VERSE = [
+    [[0, 76, 2], [2, 74, 2], [4, 72, 2], [6, 74, 2], [8, 76, 4], [12, 79, 4]],
+    [[0, 77, 2], [2, 76, 2], [4, 74, 4], [8, 71, 2], [10, 74, 2], [12, 79, 4]],
+    [[0, 76, 3], [3, 74, 1], [4, 76, 2], [6, 79, 2], [8, 83, 4], [12, 81, 2], [14, 79, 2]],
+    [[0, 81, 6], [6, 76, 2], [8, 72, 4]],
+    [[0, 69, 2], [2, 72, 2], [4, 77, 2], [6, 76, 2], [8, 77, 2], [10, 79, 2], [12, 81, 4]],
+    [[0, 79, 2], [2, 77, 2], [4, 76, 2], [6, 74, 2], [8, 71, 2], [10, 74, 2], [12, 79, 2], [14, 77, 2]],
+    [[0, 76, 4], [4, 79, 2], [6, 84, 6], [12, 83, 2], [14, 81, 2]],
+    [[0, 79, 8], [12, 76, 2], [14, 79, 2]],
+  ];
+  const CHORUS = [
+    [[0, 81, 3], [3, 79, 3], [6, 81, 2], [8, 84, 4], [12, 81, 2], [14, 79, 2]],
+    [[0, 79, 3], [3, 77, 3], [6, 79, 2], [8, 83, 4], [12, 86, 4]],
+    [[0, 88, 3], [3, 86, 3], [6, 83, 2], [8, 79, 2], [10, 83, 2], [12, 86, 4]],
+    [[0, 84, 6], [6, 83, 2], [8, 81, 6], [14, 76, 2]],
+    [[0, 77, 2], [2, 81, 2], [4, 84, 4], [8, 81, 2], [10, 84, 2], [12, 89, 4]],
+    [[0, 88, 2], [2, 86, 2], [4, 83, 2], [6, 79, 2], [8, 86, 4], [12, 83, 4]],
+    [[0, 84, 4], [4, 86, 2], [6, 88, 6], [12, 91, 4]],
+    [[0, 88, 4], [4, 86, 2], [6, 84, 10]],
+  ];
+
+  const Music = {
+    on: true,
+    playing: false,
+    bpm: 150,
+    step: 0,
+    nextTime: 0,
+    timer: null,
+    out: null,
+    echo: null,
+    noise: null,
+
+    setup() {
+      const ac = Sound.ctx;
+      if (!ac || this.out) return !!this.out;
+      this.out = ac.createGain();
+      this.out.gain.value = 0;
+      const comp = ac.createDynamicsCompressor();
+      comp.threshold.value = -16;
+      comp.ratio.value = 4;
+      this.out.connect(comp).connect(ac.destination);
+
+      // dotted-8th echo for the lead and arps
+      this.echo = ac.createGain();
+      const delay = ac.createDelay(1);
+      const fb = ac.createGain();
+      const wet = ac.createGain();
+      const tone = ac.createBiquadFilter();
+      tone.type = 'lowpass';
+      tone.frequency.value = 2800;
+      fb.gain.value = 0.32;
+      wet.gain.value = 0.35;
+      this.delay = delay;
+      this.echo.connect(delay);
+      delay.connect(tone).connect(fb).connect(delay);
+      tone.connect(wet).connect(this.out);
+
+      const len = ac.sampleRate;
+      this.noise = ac.createBuffer(1, len, ac.sampleRate);
+      const d = this.noise.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      return true;
+    },
+
+    stepDur() { return 60 / this.bpm / 4; },
+
+    setLevel(level) {
+      this.bpm = 150 + Math.min(level - 1, 10) * 3;
+      if (this.delay) this.delay.delayTime.value = this.stepDur() * 3;
+    },
+
+    play(fromStart) {
+      if (!this.on || Sound.muted || !Sound.ctx || !this.setup()) return;
+      const ac = Sound.ctx;
+      if (fromStart) this.step = 0;
+      this.delay.delayTime.value = this.stepDur() * 3;
+      this.out.gain.cancelScheduledValues(ac.currentTime);
+      this.out.gain.setTargetAtTime(0.55, ac.currentTime, 0.15);
+      if (this.playing) return;
+      this.playing = true;
+      this.nextTime = ac.currentTime + 0.08;
+      this.timer = setInterval(() => this.schedule(), 25);
+    },
+
+    stop() {
+      if (!this.playing) return;
+      this.playing = false;
+      clearInterval(this.timer);
+      const ac = Sound.ctx;
+      this.out.gain.cancelScheduledValues(ac.currentTime);
+      this.out.gain.setTargetAtTime(0, ac.currentTime, 0.08);
+    },
+
+    schedule() {
+      const ac = Sound.ctx;
+      while (this.nextTime < ac.currentTime + 0.15) {
+        this.playStep(this.step, this.nextTime);
+        this.nextTime += this.stepDur();
+        this.step = (this.step + 1) % (16 * 16);
+      }
+    },
+
+    playStep(step, t) {
+      const bar = Math.floor(step / 16) % 16;
+      const s = step % 16;
+      const chorus = bar >= 8;
+      const chord = CHORDS[PROGRESSION[bar % 8]];
+      const sd = this.stepDur();
+      const fill = bar === 7 && s >= 12;
+
+      // drums
+      if (chorus) {
+        if (s % 4 === 0) this.kick(t);
+      } else if (s === 0 || s === 8 || s === 10) {
+        this.kick(t);
+      }
+      if (s === 4 || s === 12 || (fill && s > 12)) this.snare(t, fill ? 0.7 : 1);
+      if (chorus) this.hat(t, s % 4 === 2, s % 2 ? 0.5 : 1);
+      else if (s % 2 === 0) this.hat(t, false, s % 4 ? 0.6 : 1);
+      if (bar % 8 === 0 && s === 0 && step > 0) this.crash(t);
+
+      // driving 8th-note bass with octave jumps
+      if (s % 2 === 0) {
+        const m = chord.bass + (s % 4 === 2 ? 12 : 0);
+        this.bass(midiHz(m), t, sd * 1.8);
+      }
+
+      // pad in the verse, sparkly 16th arps in the chorus
+      if (!chorus && s === 0) for (const n of chord.notes) this.pad(midiHz(n), t, sd * 16);
+      if (chorus) {
+        const order = [0, 1, 2, 3, 2, 1, 2, 3];
+        const n = chord.notes[order[s % 8]] + 12;
+        this.arp(midiHz(n), t, sd);
+        if (s === 0 || s === 6 || s === 10) for (const n2 of chord.notes) this.stab(midiHz(n2), t, sd * 1.5);
+      }
+
+      // melody
+      const line = (chorus ? CHORUS : VERSE)[bar % 8];
+      for (const [st, m, len] of line) if (st === s) this.lead(midiHz(m), t, sd * len, chorus);
+    },
+
+    env(g, t, peak, attack, dur, release) {
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + attack);
+      g.gain.setValueAtTime(peak, t + Math.max(attack, dur - release));
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    },
+
+    kick(t) {
+      const ac = Sound.ctx;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(160, t);
+      o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+      g.gain.setValueAtTime(0.9, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+      o.connect(g).connect(this.out);
+      o.start(t); o.stop(t + 0.35);
+    },
+
+    noiseHit(t, type, freq, peak, dur) {
+      const ac = Sound.ctx;
+      const src = ac.createBufferSource();
+      src.buffer = this.noise;
+      const f = ac.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(peak, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      src.connect(f).connect(g).connect(this.out);
+      src.start(t, Math.random() * 0.5);
+      src.stop(t + dur + 0.02);
+    },
+
+    snare(t, v) {
+      this.noiseHit(t, 'highpass', 1400, 0.45 * v, 0.16);
+      const ac = Sound.ctx;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(220, t);
+      o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
+      g.gain.setValueAtTime(0.3 * v, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      o.connect(g).connect(this.out);
+      o.start(t); o.stop(t + 0.12);
+    },
+
+    hat(t, open, v) {
+      this.noiseHit(t, 'highpass', 7500, (open ? 0.12 : 0.1) * v, open ? 0.22 : 0.045);
+    },
+
+    crash(t) {
+      this.noiseHit(t, 'highpass', 5000, 0.18, 1.4);
+    },
+
+    bass(freq, t, dur) {
+      const ac = Sound.ctx;
+      const o = ac.createOscillator(), o2 = ac.createOscillator();
+      const f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth';
+      o2.type = 'square';
+      o.frequency.value = freq;
+      o2.frequency.value = freq / 2;
+      f.type = 'lowpass';
+      f.Q.value = 6;
+      f.frequency.setValueAtTime(1400, t);
+      f.frequency.exponentialRampToValueAtTime(260, t + dur);
+      this.env(g, t, 0.2, 0.005, dur, 0.05);
+      o.connect(f); o2.connect(f);
+      f.connect(g).connect(this.out);
+      o.start(t); o2.start(t);
+      o.stop(t + dur + 0.02); o2.stop(t + dur + 0.02);
+    },
+
+    pad(freq, t, dur) {
+      const ac = Sound.ctx;
+      const f = ac.createBiquadFilter(), g = ac.createGain();
+      f.type = 'lowpass';
+      f.frequency.value = 1500;
+      this.env(g, t, 0.035, 0.12, dur, 0.3);
+      f.connect(g).connect(this.out);
+      for (const det of [-9, 9]) {
+        const o = ac.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = freq;
+        o.detune.value = det;
+        o.connect(f);
+        o.start(t); o.stop(t + dur + 0.02);
+      }
+    },
+
+    arp(freq, t, dur) {
+      const ac = Sound.ctx;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'square';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.045, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.95);
+      o.connect(g);
+      g.connect(this.out);
+      g.connect(this.echo);
+      o.start(t); o.stop(t + dur);
+    },
+
+    stab(freq, t, dur) {
+      const ac = Sound.ctx;
+      const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.value = freq;
+      f.type = 'lowpass';
+      f.frequency.setValueAtTime(3200, t);
+      f.frequency.exponentialRampToValueAtTime(600, t + dur);
+      this.env(g, t, 0.05, 0.004, dur, 0.04);
+      o.connect(f).connect(g).connect(this.out);
+      o.start(t); o.stop(t + dur + 0.02);
+    },
+
+    lead(freq, t, dur, bright) {
+      const ac = Sound.ctx;
+      const o = ac.createOscillator(), o2 = ac.createOscillator();
+      const f = ac.createBiquadFilter(), g = ac.createGain();
+      const lfo = ac.createOscillator(), lfoGain = ac.createGain();
+      o.type = 'square';
+      o2.type = 'triangle';
+      o.frequency.value = freq;
+      o2.frequency.value = freq;
+      o2.detune.value = 7;
+      lfo.frequency.value = 5.5;
+      lfoGain.gain.setValueAtTime(0, t);
+      lfoGain.gain.linearRampToValueAtTime(freq * 0.006, t + Math.min(dur, 0.35));
+      lfo.connect(lfoGain);
+      lfoGain.connect(o.frequency);
+      lfoGain.connect(o2.frequency);
+      f.type = 'lowpass';
+      f.frequency.value = bright ? 3600 : 2600;
+      this.env(g, t, bright ? 0.075 : 0.065, 0.01, dur * 0.95, 0.06);
+      o.connect(f); o2.connect(f);
+      f.connect(g);
+      g.connect(this.out);
+      g.connect(this.echo);
+      const end = t + dur + 0.02;
+      o.start(t); o2.start(t); lfo.start(t);
+      o.stop(end); o2.stop(end); lfo.stop(end);
     },
   };
 
@@ -540,6 +843,7 @@
   const overlayText = $('overlay-text');
   const startBtn = $('start-btn');
   const muteBtn = $('mute-btn');
+  const musicBtn = $('music-btn');
   const ui = { score: $('score'), best: $('best'), level: $('level'), lines: $('lines') };
 
   let dpr = 1;
@@ -1027,6 +1331,7 @@
       const newLevel = Math.floor(lines / 10) + 1;
       if (newLevel > level) {
         level = newLevel;
+        Music.setLevel(level);
         setTimeout(() => popup('レベルアップ', `שלב ${level}`, 'level', 62), 500);
       }
     } else {
@@ -1067,11 +1372,14 @@
     spawnNext();
     updateUI();
     overlay.classList.add('hidden');
+    Music.setLevel(1);
+    Music.play(true);
   }
 
   function gameOver() {
     state = 'over';
     cur = null;
+    Music.stop();
     updateUI();
     overlayTitle.textContent = 'המשחק נגמר';
     overlayText.textContent = `ניקוד: ${score.toLocaleString()} · שורות: ${lines}`;
@@ -1086,9 +1394,11 @@
       overlayText.textContent = 'תה ירוק וממשיכים 🍵';
       startBtn.textContent = 'המשך';
       overlay.classList.remove('hidden');
+      Music.stop();
     } else if (state === 'pause') {
       state = 'play';
       overlay.classList.add('hidden');
+      Music.play(false);
     }
   }
 
@@ -1257,6 +1567,7 @@
   function press(act) {
     if (act === 'pause') { togglePause(); return; }
     if (act === 'mute') { toggleMute(); return; }
+    if (act === 'music') { toggleMusic(); return; }
     if (state === 'menu' || state === 'over') {
       if (act === 'drop' || act === 'start') start();
       return;
@@ -1303,7 +1614,7 @@
     ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down',
     ArrowUp: 'rotate', KeyX: 'rotate', KeyZ: 'rotateCCW',
     Space: 'drop', KeyC: 'hold', ShiftLeft: 'hold', ShiftRight: 'hold',
-    KeyP: 'pause', Escape: 'pause', KeyM: 'mute', Enter: 'start',
+    KeyP: 'pause', Escape: 'pause', KeyM: 'mute', KeyB: 'music', Enter: 'start',
   };
 
   window.addEventListener('keydown', (e) => {
@@ -1335,11 +1646,110 @@
 
   startBtn.addEventListener('click', start);
 
+  function syncMusic() {
+    if (state === 'play' || state === 'clearing') Music.play(false);
+    else Music.stop();
+    if (!Music.on || Sound.muted) Music.stop();
+  }
+
   function toggleMute() {
     Sound.muted = !Sound.muted;
     muteBtn.textContent = Sound.muted ? '🔇 מושתק' : '🔊 צליל';
+    syncMusic();
   }
   muteBtn.addEventListener('click', toggleMute);
+
+  function toggleMusic() {
+    Music.on = !Music.on;
+    musicBtn.textContent = Music.on ? '🎵 מוזיקה: פועלת' : '🎵 מוזיקה: כבויה';
+    document.querySelector('.touch [data-act="music"]')?.classList.toggle('off', !Music.on);
+    syncMusic();
+  }
+  musicBtn.addEventListener('click', toggleMusic);
+
+  // ---------------------------------------------------------------------------
+  // Touch gestures on the board: drag sideways to move, tap to rotate,
+  // drag down to soft drop, flick down to hard drop, flick up to hold.
+  // ---------------------------------------------------------------------------
+  const gesture = { id: null };
+
+  frame.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' || state !== 'play' || gesture.id !== null) return;
+    e.preventDefault();
+    Sound.init();
+    gesture.id = e.pointerId;
+    gesture.x0 = gesture.ax = e.clientX;
+    gesture.y0 = gesture.ay = e.clientY;
+    gesture.t0 = performance.now();
+    gesture.cell = boardRect().width / COLS;
+    gesture.axis = null;
+    gesture.moved = false;
+    gesture.samples = [{ t: gesture.t0, y: e.clientY }];
+    gesture.lx = e.clientX;
+    gesture.ly = e.clientY;
+    try { frame.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  });
+
+  // downward finger speed (px/ms) over the last ~150ms
+  function recentSpeed(e) {
+    const now = performance.now();
+    const s = gesture.samples;
+    if (e) {
+      s.push({ t: now, y: e.clientY });
+      gesture.lx = e.clientX;
+      gesture.ly = e.clientY;
+    }
+    while (s.length > 2 && now - s[1].t > 150) s.shift();
+    return (s[s.length - 1].y - s[0].y) / Math.max(1, s[s.length - 1].t - s[0].t);
+  }
+  const FLICK_SPEED = 0.5;
+
+  frame.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== gesture.id || state !== 'play') return;
+    const c = gesture.cell;
+    const speed = recentSpeed(e);
+    const tdx = e.clientX - gesture.x0, tdy = e.clientY - gesture.y0;
+    if (!gesture.axis && Math.max(Math.abs(tdx), Math.abs(tdy)) > c * 0.5) {
+      gesture.axis = Math.abs(tdx) > Math.abs(tdy) ? 'x' : 'y';
+    }
+    if (gesture.axis === 'x') {
+      let dx = e.clientX - gesture.ax;
+      while (Math.abs(dx) >= c) {
+        const d = Math.sign(dx);
+        move(d);
+        gesture.ax += d * c;
+        dx = e.clientX - gesture.ax;
+        gesture.moved = true;
+      }
+    } else if (gesture.axis === 'y') {
+      // slow drag down = soft drop, one row per cell of finger travel
+      while (speed < FLICK_SPEED && e.clientY - gesture.ay >= c && cur) {
+        if (softStep()) score += 1;
+        gesture.ay += c;
+        gesture.moved = true;
+      }
+    }
+  });
+
+  function endGesture(e) {
+    if (e.pointerId !== gesture.id) return;
+    gesture.id = null;
+    if (state !== 'play' || e.type === 'pointercancel') return;
+    const c = gesture.cell;
+    const dt = performance.now() - gesture.t0;
+    const dx = gesture.lx - gesture.x0, dy = gesture.ly - gesture.y0;
+    const speed = recentSpeed(null);
+    if (gesture.axis === 'y' && dy > c * 1.5 && speed >= FLICK_SPEED) {
+      hardDrop();
+    } else if (gesture.axis === 'y' && dy < -c * 1.5) {
+      doHold();
+    } else if (!gesture.moved && dt < 350 && Math.hypot(dx, dy) < c * 0.6) {
+      rotate(1);
+    }
+    updateUI();
+  }
+  frame.addEventListener('pointerup', endGesture);
+  frame.addEventListener('pointercancel', endGesture);
 
   window.addEventListener('blur', () => {
     held.left = held.right = held.down = false;
