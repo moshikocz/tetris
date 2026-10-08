@@ -1,13 +1,16 @@
 // Offline support for the installed app.
 // Game files: network first, so a new version shows up on the next launch;
 // the cached copy is used only when the network is slow or offline.
-// Fonts: cache first, they never change.
-const CACHE = 'wood-tetris-v2';
+const CACHE = 'wood-tetris-v3';
 const SHELL = [
   './',
   'index.html',
   'style.css',
   'js/game.js',
+  'js/sw-register.js',
+  'fonts/rubik-hebrew.woff2',
+  'fonts/rubik-latin.woff2',
+  'fonts/yusei-magic-game.woff2',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -45,22 +48,8 @@ async function networkFirst(req) {
   }
 }
 
-async function cacheFirst(req) {
-  const cache = await caches.open(CACHE);
-  const cached = await cache.match(req);
-  if (cached) return cached;
-  const res = await fetch(req);
-  if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
-  return res;
-}
-
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
-    e.respondWith(cacheFirst(req));
-  } else if (url.origin === self.location.origin) {
-    e.respondWith(networkFirst(req));
-  }
+  if (new URL(req.url).origin === self.location.origin) e.respondWith(networkFirst(req));
 });

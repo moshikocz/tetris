@@ -2267,6 +2267,7 @@
   let lastResult = null;
   let pending = null;       // the table entry of the game that just ended
   let highlightId = null;   // row to highlight in the results table
+  let overAt = 0;           // when the last game ended
   let dropAcc = 0, lockTimer = 0, lockResets = 0;
   let clearingRows = [], clearTimer = 0;
   const held = { left: false, right: false, down: false };
@@ -2782,6 +2783,7 @@
   function endGame(reason) {
     if (state === 'over') return;
     state = 'over';
+    overAt = performance.now();
     cur = null;
     Music.stop();
     endFever();
@@ -3506,6 +3508,8 @@
     if (act === 'mute') { toggleMute(); return; }
     if (act === 'music') { toggleMusic(); return; }
     if (state === 'menu' || state === 'over') {
+      // a drop key still held from the last move must not skip the results screen
+      if (state === 'over' && performance.now() - overAt < 1200) return;
       if ((act === 'start' || act === 'drop') && (currentPanel === 'menu' || currentPanel === 'over')) start();
       return;
     }
