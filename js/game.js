@@ -18,6 +18,8 @@
   const DAS_MS = 150;
   const ARR_MS = 45;
   const SOFT_MS = 32;
+  const LEVEL_MS = 40000;      // speed goes up at least this often...
+  const LINES_PER_LEVEL = 10;  // ...or after this many lines, whichever comes first
 
   const TYPES = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
 
@@ -65,6 +67,9 @@
   };
 
   const SCORE_TABLE = [0, 100, 300, 500, 800];
+  const TSPIN_SCORE = [400, 800, 1200, 1600];
+  const TSPIN_LABELS = ['טי-ספין!', 'טי-ספין יחיד!', 'טי-ספין כפול!', 'טי-ספין משולש!'];
+  const PERFECT_SCORE = 2000;
   const CLEAR_LABELS = [
     null,
     { jp: '咲く!', he: 'פריחה!' },
@@ -86,6 +91,8 @@
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   };
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  // keeps "+250" and "×4" in order inside right-to-left Hebrew text
+  const ltr = (s) => '\u2066' + s + '\u2069';
 
   function makeCanvas(w, h) {
     const c = document.createElement('canvas');
@@ -517,6 +524,95 @@
       const step = n === 4 ? 0.06 : 0.08;
       for (let i = 0; i < count; i++) this.pluck(scale[i % scale.length], i * step);
     },
+    noiseBuf() {
+      if (!this._noise) {
+        const ac = this.ctx, len = ac.sampleRate;
+        this._noise = ac.createBuffer(1, len, ac.sampleRate);
+        const d = this._noise.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      }
+      return this._noise;
+    },
+    // temple-bell: inharmonic partials with a long decay
+    bell(freq, when, dur, vol) {
+      if (this.muted || !this.ctx) return;
+      const ac = this.ctx, t = ac.currentTime + when;
+      [[1, 1], [2.76, 0.45], [5.4, 0.22], [8.93, 0.1]].forEach(([mul, amp], i) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.frequency.value = freq * mul;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(vol * amp, t + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur / (1 + i * 0.6));
+        o.connect(g).connect(ac.destination);
+        o.start(t);
+        o.stop(t + dur);
+      });
+    },
+    taiko(when, vol) {
+      if (this.muted || !this.ctx) return;
+      const ac = this.ctx, t = ac.currentTime + when;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(130, t);
+      o.frequency.exponentialRampToValueAtTime(52, t + 0.25);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      o.connect(g).connect(ac.destination);
+      o.start(t);
+      o.stop(t + 0.55);
+      this.swoosh(when, 'lowpass', 500, 300, 0.12, vol * 0.6);
+    },
+    swoosh(when, type, f0, f1, dur, vol) {
+      if (this.muted || !this.ctx) return;
+      const ac = this.ctx, t = ac.currentTime + when;
+      const src = ac.createBufferSource();
+      src.buffer = this.noiseBuf();
+      const f = ac.createBiquadFilter();
+      f.type = type;
+      f.Q.value = type === 'bandpass' ? 4 : 1;
+      f.frequency.setValueAtTime(f0, t);
+      f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.3);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f).connect(g).connect(ac.destination);
+      src.start(t);
+      src.stop(t + dur + 0.02);
+    },
+    // each link of a combo rings one step higher, so a long chain climbs the scale
+    combo(n) {
+      const scale = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51, 1567.98, 1760.0, 2093.0];
+      const top = Math.min(n, scale.length - 1);
+      this.taiko(0, 0.7);
+      if (n >= 3) this.taiko(0.1, 0.5);
+      if (n >= 5) this.taiko(0.2, 0.6);
+      this.bell(scale[top], 0.18, 1.4, 0.16);
+      if (n >= 2) this.bell(scale[Math.max(0, top - 2)], 0.18, 1.4, 0.1);
+      if (n >= 4) this.bell(scale[top] * 2, 0.3, 1.2, 0.08);
+    },
+    tspin() {
+      this.swoosh(0, 'bandpass', 300, 4200, 0.4, 0.5);
+      this.pluck(659.25, 0.25);
+      this.pluck(987.77, 0.33);
+      this.pluck(1318.51, 0.41);
+    },
+    backToBack() {
+      this.bell(392, 0.1, 3, 0.28);
+      this.bell(587.33, 0.3, 3, 0.2);
+      this.taiko(0.1, 0.8);
+    },
+    perfect() {
+      this.bell(98, 0, 4.5, 0.45);
+      const scale = [523.25, 587.33, 659.25, 783.99, 880.0];
+      for (let i = 0; i < 15; i++) this.pluck(scale[i % 5] * Math.pow(2, Math.floor(i / 5)), 0.15 + i * 0.04);
+      this.bell(2093, 0.8, 2.5, 0.15);
+      [0, 0.12, 0.24, 0.5].forEach((w) => this.taiko(w, 0.8));
+    },
+    speedUp() {
+      this.swoosh(0, 'bandpass', 500, 3500, 0.5, 0.35);
+      this.bell(783.99, 0.35, 0.9, 0.14);
+      this.bell(1046.5, 0.5, 1.2, 0.14);
+    },
   };
 
   // ---------------------------------------------------------------------------
@@ -843,6 +939,14 @@
   const overlayText = $('overlay-text');
   const startBtn = $('start-btn');
   const muteBtn = $('mute-btn');
+  const pauseBtn = $('pause-btn');
+  const howtoBtn = $('howto-btn');
+  const ovMusicBtn = $('ov-music-btn');
+  const ovSoundBtn = $('ov-sound-btn');
+  const comboBadge = $('combo-badge');
+  const speedBar = $('speed-bar');
+  const speedFill = $('speed-fill');
+  const tutorial = $('tutorial');
   const musicBtn = $('music-btn');
   const ui = { score: $('score'), best: $('best'), level: $('level'), lines: $('lines') };
 
@@ -992,10 +1096,10 @@
     return boardCanvas.getBoundingClientRect();
   }
 
-  function burstRows(rows, count) {
+  function burstRows(rows, big, intensity = 1) {
     const rect = boardRect();
     const cellH = rect.height / ROWS;
-    const scale = reduceMotion ? 0.35 : 1;
+    const scale = (reduceMotion ? 0.35 : 1) * intensity;
     rows.forEach((r, ri) => {
       const y = rect.top + (r - HIDDEN + 0.5) * cellH;
       const nb = Math.round(6 * scale) || 1;
@@ -1011,7 +1115,7 @@
       }
     });
 
-    if (count === 4) {
+    if (big) {
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height * 0.45;
       parts.push({
@@ -1033,6 +1137,18 @@
       for (let i = 0; i < Math.round(16 * scale); i++) {
         addSparkle(cx + rand(-150, 150), cy + rand(-150, 150), rand(0, 0.8));
       }
+    }
+  }
+
+  // lilac pinwheel of blossoms around a T-spin
+  function spinBurst(cx, cy) {
+    const n = reduceMotion ? 4 : 10;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      addBlossom(cx, cy, {
+        img: blossoms[6 + (i % 2)], vx: Math.cos(a) * 320, vy: Math.sin(a) * 320 - 60,
+        g: 200, size: rand(36, 54), life: 1.6,
+      });
     }
   }
 
@@ -1139,14 +1255,23 @@
   }
 
   function popup(jp, he, cls = '', topPct = 40) {
+    // a new clear replaces the previous clear's text instead of stacking on it
+    if (!cls.includes('level')) popups.querySelectorAll('.popup:not(.level)').forEach((old) => old.remove());
     const el = document.createElement('div');
     el.className = 'popup ' + cls;
     const rect = boardRect();
     el.style.left = rect.left + rect.width / 2 + 'px';
     el.style.top = rect.top + rect.height * topPct / 100 + 'px';
-    el.innerHTML = `<span class="jp"></span><span class="he"></span>`;
-    el.firstChild.textContent = jp;
-    el.lastChild.textContent = he;
+    const j = document.createElement('span');
+    j.className = 'jp';
+    j.textContent = jp;
+    el.appendChild(j);
+    for (const line of [].concat(he)) {
+      const s = document.createElement('span');
+      s.className = 'he';
+      s.textContent = line;
+      el.appendChild(s);
+    }
     popups.appendChild(el);
     setTimeout(() => el.remove(), 1700);
   }
@@ -1162,6 +1287,8 @@
   let clearingRows = [], clearTimer = 0;
   const held = { left: false, right: false, down: false };
   let dasDir = 0, dasTimer = 0, arrTimer = 0;
+  let b2b = false, lastRotate = false;
+  let levelTimer = 0, linesInLevel = 0;
 
   try { best = parseInt(localStorage.getItem('wood-tetris-best') || '0', 10) || 0; } catch (e) { best = 0; }
 
@@ -1221,6 +1348,7 @@
     if (state !== 'play' || !cur) return false;
     if (collide(cur.m, cur.x + dx, cur.y)) return false;
     cur.x += dx;
+    lastRotate = false;
     afterManipulation();
     return true;
   }
@@ -1237,6 +1365,7 @@
         cur.x += kx;
         cur.y -= ky;
         cur.rot = to;
+        lastRotate = true;
         afterManipulation();
         return;
       }
@@ -1247,6 +1376,7 @@
     if (!collide(cur.m, cur.x, cur.y + 1)) {
       cur.y++;
       lockTimer = 0;
+      lastRotate = false;
       return true;
     }
     return false;
@@ -1256,6 +1386,7 @@
     if (state !== 'play' || !cur) return;
     let n = 0;
     while (!collide(cur.m, cur.x, cur.y + 1)) { cur.y++; n++; }
+    if (n) lastRotate = false;
     score += n * 2;
     Sound.tok(1.4);
     lockPiece(true);
@@ -1291,10 +1422,49 @@
   }
 
   function gravityMs() {
-    return Math.max(16, 1000 * Math.pow(0.8 - (level - 1) * 0.007, level - 1));
+    return Math.max(55, 900 * Math.pow(0.85, level - 1));
+  }
+
+  function levelUp() {
+    level++;
+    levelTimer = 0;
+    Music.setLevel(level);
+    Sound.speedUp();
+    setTimeout(() => popup('スピードアップ!', `שלב ${level} · מהירות עולה!`, 'level', 64), 450);
+    speedBar.classList.remove('flash');
+    void speedBar.offsetWidth;
+    speedBar.classList.add('flash');
+    updateUI();
+  }
+
+  // 3-corner rule: the T was rotated into place and 3 of its 4 corners are blocked
+  function isTSpin() {
+    if (cur.type !== 'T' || !lastRotate) return false;
+    let n = 0;
+    for (const [cx, cy] of [[0, 0], [2, 0], [0, 2], [2, 2]]) {
+      const x = cur.x + cx, y = cur.y + cy;
+      if (x < 0 || x >= COLS || y >= TOTAL || (y >= 0 && grid[y][x])) n++;
+    }
+    return n >= 3;
+  }
+
+  function updateComboBadge() {
+    if (combo >= 1) {
+      comboBadge.textContent = `コンボ ×${combo + 1}`;
+      comboBadge.classList.remove('hidden', 'bump');
+      void comboBadge.offsetWidth;
+      comboBadge.classList.add('bump');
+    } else {
+      comboBadge.classList.add('hidden');
+    }
   }
 
   function lockPiece(silent) {
+    const tspin = isTSpin();
+    const rect = boardRect();
+    const spinX = rect.left + (cur.x + 1.5) * rect.width / COLS;
+    const spinY = rect.top + (cur.y + 1.5 - HIDDEN) * rect.height / ROWS;
+
     let allHidden = true;
     for (let r = 0; r < cur.m.length; r++) {
       for (let c = 0; c < cur.m[r].length; c++) {
@@ -1306,38 +1476,85 @@
     }
     if (!silent) Sound.tok(1);
     cur = null;
+    lastRotate = false;
     if (allHidden) { gameOver(); return; }
 
     const full = [];
     for (let y = 0; y < TOTAL; y++) if (grid[y].every(Boolean)) full.push(y);
+    const n = full.length;
 
-    if (full.length) {
+    let pts = 0;
+    let jp = null;
+    let perfect = false;
+    const tags = [];
+
+    if (tspin) {
+      pts += TSPIN_SCORE[n] * level;
+      jp = 'Tスピン!';
+      tags.push(TSPIN_LABELS[n]);
+      Sound.tspin();
+      spinBurst(spinX, spinY);
+    }
+
+    if (n) {
       combo++;
-      const n = full.length;
-      score += SCORE_TABLE[n] * level + (combo > 0 ? 50 * combo * level : 0);
+      if (!tspin) {
+        pts += SCORE_TABLE[n] * level;
+        jp = CLEAR_LABELS[n].jp;
+        tags.push(CLEAR_LABELS[n].he);
+      }
+      // back-to-back: two "difficult" clears (Tetris or T-spin) in a row
+      const difficult = n === 4 || tspin;
+      if (difficult && b2b) {
+        pts = Math.round(pts * 1.5);
+        jp = '連続' + jp;
+        tags.push(`ברצף! ${ltr('×1.5')}`);
+        Sound.backToBack();
+      }
+      b2b = difficult;
+      if (combo > 0) {
+        pts += 50 * combo * level;
+        tags.push(`קומבו ${ltr('×' + (combo + 1))}!`);
+        Sound.combo(combo);
+      }
+      const set = new Set(full);
+      perfect = grid.every((row, y) => set.has(y) || row.every((cell) => !cell));
+      if (perfect) {
+        pts += PERFECT_SCORE * level;
+        jp = '完璧!';
+        tags.unshift('לוח נקי!');
+        Sound.perfect();
+      }
+
       lines += n;
+      linesInLevel += n;
       clearingRows = full;
       clearTimer = 0;
       state = 'clearing';
-      burstRows(full, n);
+      const big = n === 4 || perfect || (tspin && n >= 2);
+      burstRows(full, big, 1 + Math.min(combo, 6) * 0.2);
       Sound.clear(n);
-      const label = CLEAR_LABELS[n];
-      popup(label.jp, combo > 0 ? `${label.he} · קומבו ×${combo + 1}` : label.he, n === 4 ? 'big' : '', 42);
-      if (n === 4 && !reduceMotion) {
+      if (big && !reduceMotion) {
         frame.classList.remove('shake');
         void frame.offsetWidth;
         frame.classList.add('shake');
       }
-      const newLevel = Math.floor(lines / 10) + 1;
-      if (newLevel > level) {
-        level = newLevel;
-        Music.setLevel(level);
-        setTimeout(() => popup('レベルアップ', `שלב ${level}`, 'level', 62), 500);
+      while (linesInLevel >= LINES_PER_LEVEL) {
+        linesInLevel -= LINES_PER_LEVEL;
+        levelUp();
       }
     } else {
       combo = -1;
       spawnNext();
     }
+
+    score += pts;
+    if (jp) {
+      tags.push(ltr('+' + pts.toLocaleString()));
+      const cls = (n === 4 || perfect) ? 'big' : (tspin ? 'spin' : '');
+      popup(jp, tags, cls, 42);
+    }
+    updateComboBadge();
     updateUI();
   }
 
@@ -1367,7 +1584,10 @@
     queue = [nextFromBag(), nextFromBag(), nextFromBag()];
     holdType = null;
     score = 0; lines = 0; level = 1; combo = -1;
+    b2b = false; lastRotate = false;
+    levelTimer = 0; linesInLevel = 0;
     clearingRows = [];
+    updateComboBadge();
     state = 'play';
     spawnNext();
     updateUI();
@@ -1419,6 +1639,12 @@
       return;
     }
     if (state !== 'play' || !cur) return;
+
+    levelTimer += dt;
+    if (levelTimer >= LEVEL_MS) {
+      linesInLevel = 0;
+      levelUp();
+    }
 
     // auto-shift
     if (dasDir) {
@@ -1548,6 +1774,14 @@
     }
   }
 
+  let shownProgress = -1;
+  function renderSpeedBar() {
+    const p = clamp(Math.max(levelTimer / LEVEL_MS, linesInLevel / LINES_PER_LEVEL), 0, 1);
+    if (Math.abs(p - shownProgress) < 0.004) return;
+    shownProgress = p;
+    speedFill.style.transform = `scaleX(${p.toFixed(3)})`;
+  }
+
   let last = performance.now();
   function loop(now) {
     const dtMs = Math.min(50, now - last);
@@ -1558,6 +1792,7 @@
     renderBoard();
     renderSide();
     renderEffects();
+    renderSpeedBar();
     requestAnimationFrame(loop);
   }
 
@@ -1618,6 +1853,12 @@
   };
 
   window.addEventListener('keydown', (e) => {
+    if (tutorialOpen()) {
+      if (e.code === 'Enter' || e.code === 'Space' || e.code === 'ArrowLeft') { e.preventDefault(); tutNextStep(); }
+      else if (e.code === 'ArrowRight') { e.preventDefault(); showTutPage(Math.max(0, tutIndex - 1)); }
+      else if (e.code === 'Escape') { e.preventDefault(); closeTutorial(); }
+      return;
+    }
     const act = KEYMAP[e.code];
     if (!act) return;
     e.preventDefault();
@@ -1630,21 +1871,11 @@
     if (act) release(act);
   });
 
-  document.querySelectorAll('.touch button').forEach((btn) => {
-    const act = btn.dataset.act;
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      btn.classList.add('on');
-      Sound.init();
-      press(act);
-    });
-    const up = () => { btn.classList.remove('on'); release(act); };
-    btn.addEventListener('pointerup', up);
-    btn.addEventListener('pointerleave', up);
-    btn.addEventListener('pointercancel', up);
-  });
-
   startBtn.addEventListener('click', start);
+  pauseBtn.addEventListener('click', () => {
+    Sound.init();
+    if (state === 'play' || state === 'pause') togglePause();
+  });
 
   function syncMusic() {
     if (state === 'play' || state === 'clearing') Music.play(false);
@@ -1652,20 +1883,73 @@
     if (!Music.on || Sound.muted) Music.stop();
   }
 
+  function refreshAudioButtons() {
+    muteBtn.textContent = Sound.muted ? '🔇 מושתק' : '🔊 צליל';
+    ovSoundBtn.textContent = Sound.muted ? '🔇 מושתק' : '🔊 צליל';
+    musicBtn.textContent = Music.on ? '🎵 מוזיקה: פועלת' : '🎵 מוזיקה: כבויה';
+    ovMusicBtn.textContent = Music.on ? '🎵 מוזיקה' : '🎵 כבויה';
+  }
+
   function toggleMute() {
     Sound.muted = !Sound.muted;
-    muteBtn.textContent = Sound.muted ? '🔇 מושתק' : '🔊 צליל';
+    refreshAudioButtons();
     syncMusic();
   }
   muteBtn.addEventListener('click', toggleMute);
+  ovSoundBtn.addEventListener('click', toggleMute);
 
   function toggleMusic() {
     Music.on = !Music.on;
-    musicBtn.textContent = Music.on ? '🎵 מוזיקה: פועלת' : '🎵 מוזיקה: כבויה';
-    document.querySelector('.touch [data-act="music"]')?.classList.toggle('off', !Music.on);
+    refreshAudioButtons();
     syncMusic();
   }
   musicBtn.addEventListener('click', toggleMusic);
+  ovMusicBtn.addEventListener('click', toggleMusic);
+
+  // ---------------------------------------------------------------------------
+  // How-to-play walkthrough: opens by itself the first time, then from the menu
+  // ---------------------------------------------------------------------------
+  const TUTORIAL_KEY = 'wood-tetris-tutorial-seen';
+  const tutPages = [...tutorial.querySelectorAll('.tut-page')];
+  const tutDots = $('tut-dots');
+  const tutNext = $('tut-next');
+  let tutIndex = 0;
+  tutPages.forEach(() => tutDots.appendChild(document.createElement('i')));
+
+  function tutorialOpen() {
+    return !tutorial.classList.contains('hidden');
+  }
+
+  function showTutPage(i) {
+    tutIndex = i;
+    tutPages.forEach((pg, k) => { pg.hidden = k !== i; });
+    [...tutDots.children].forEach((d, k) => d.classList.toggle('on', k === i));
+    const lastPage = i === tutPages.length - 1;
+    tutNext.textContent = !lastPage ? 'הבא' : state === 'pause' ? 'חזרה למשחק' : 'יאללה, משחקים!';
+  }
+
+  function openTutorial() {
+    tutorial.classList.remove('hidden');
+    showTutPage(0);
+  }
+
+  function closeTutorial() {
+    tutorial.classList.add('hidden');
+    try { localStorage.setItem(TUTORIAL_KEY, '1'); } catch (e) { /* ignore */ }
+  }
+
+  function tutNextStep() {
+    if (tutIndex < tutPages.length - 1) {
+      showTutPage(tutIndex + 1);
+    } else {
+      closeTutorial();
+      start();
+    }
+  }
+
+  tutNext.addEventListener('click', tutNextStep);
+  $('tut-skip').addEventListener('click', closeTutorial);
+  howtoBtn.addEventListener('click', openTutorial);
 
   // ---------------------------------------------------------------------------
   // Touch gestures on the board: drag sideways to move, tap to rotate,
@@ -1765,6 +2049,10 @@
   resize();
   initAmbient();
   updateUI();
+  refreshAudioButtons();
+  let tutorialSeen = false;
+  try { tutorialSeen = localStorage.getItem(TUTORIAL_KEY) === '1'; } catch (e) { tutorialSeen = false; }
+  if (!tutorialSeen) openTutorial();
   requestAnimationFrame(loop);
 
 })();

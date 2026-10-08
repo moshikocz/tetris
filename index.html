@@ -24,29 +24,87 @@
     </section>
 
     <section class="stats plaque" dir="rtl">
-      <div class="stat"><span>ניקוד</span><b id="score">0</b></div>
-      <div class="stat"><span>שיא</span><b id="best">0</b></div>
-      <div class="stat"><span>שלב</span><b id="level">1</b></div>
-      <div class="stat"><span>שורות</span><b id="lines">0</b></div>
+      <div class="stat-grid">
+        <div class="stat"><span>ניקוד</span><b id="score">0</b></div>
+        <div class="stat"><span>שיא</span><b id="best">0</b></div>
+        <div class="stat"><span>שלב</span><b id="level">1</b></div>
+        <div class="stat"><span>שורות</span><b id="lines">0</b></div>
+      </div>
+      <button id="pause-btn" class="pause-btn" type="button" aria-label="השהיה">❚❚</button>
     </section>
 
     <section class="board-wrap">
       <div class="board-frame" id="frame">
         <i class="nail tl"></i><i class="nail tr"></i><i class="nail bl"></i><i class="nail br"></i>
+        <div class="speed-bar" id="speed-bar" aria-hidden="true"><i id="speed-fill"></i></div>
         <canvas id="board"></canvas>
+        <div class="combo-badge jp hidden" id="combo-badge" dir="ltr" aria-live="polite"></div>
         <div class="overlay" id="overlay" dir="rtl">
           <div class="sign">
             <div class="jp big">桜</div>
             <h2 id="overlay-title">טטריס עץ</h2>
             <p id="overlay-text">נקו שורות ותנו לפריחת הדובדבן להתפוצץ על המסך</p>
-            <ul class="touch-hint">
-              <li>גרירה לצדדים: הזזה</li>
-              <li>הקשה: סיבוב</li>
-              <li>גרירה למטה: ירידה רכה</li>
-              <li>החלקה מהירה למטה: הפלה</li>
-              <li>החלקה למעלה: החזקה</li>
-            </ul>
-            <button id="start-btn" type="button">התחל</button>
+            <button id="start-btn" class="primary-btn" type="button">התחל</button>
+            <div class="ov-row">
+              <button id="howto-btn" class="small-btn" type="button">❓ איך משחקים</button>
+              <button id="ov-music-btn" class="small-btn" type="button">🎵 מוזיקה</button>
+              <button id="ov-sound-btn" class="small-btn" type="button">🔊 צליל</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="overlay tutorial hidden" id="tutorial" dir="rtl">
+          <div class="sign tut">
+            <button id="tut-skip" class="tut-close" type="button" aria-label="סגירה">✕</button>
+
+            <section class="tut-page">
+              <div class="tut-icon jp">桜</div>
+              <h2>ברוכים הבאים!</h2>
+              <p>קוביות עץ נופלות מלמעלה. סדרו אותן כך שתיווצר שורה מלאה מקצה לקצה.</p>
+              <p>כל שורה מלאה מתפוצצת בפריחת דובדבן ונעלמת. אם הקוביות מגיעות לתקרה, המשחק נגמר.</p>
+            </section>
+
+            <section class="tut-page" hidden>
+              <h2>איך שולטים</h2>
+              <ul class="tut-list only-touch">
+                <li><b class="gest tap">👆</b><span><strong>הקשה על הלוח</strong>סיבוב החלק</span></li>
+                <li><b class="gest swipe-x">👆</b><span><strong>גרירה לצדדים</strong>הזזה</span></li>
+                <li><b class="gest drag-down">👆</b><span><strong>גרירה איטית למטה</strong>ירידה מהירה יותר</span></li>
+                <li><b class="gest flick-down">👆</b><span><strong>החלקה מהירה למטה</strong>הפלה מיידית</span></li>
+                <li><b class="gest flick-up">👆</b><span><strong>החלקה למעלה</strong>שמירת החלק בצד להמשך</span></li>
+                <li><b class="gest">❚❚</b><span><strong>הכפתור ליד הניקוד</strong>השהיה</span></li>
+              </ul>
+              <ul class="tut-list only-keys">
+                <li><b><kbd>←</kbd><kbd>→</kbd></b><span><strong>חיצים לצדדים</strong>הזזה</span></li>
+                <li><b><kbd>↑</kbd></b><span><strong>חץ למעלה</strong>סיבוב (<kbd>Z</kbd> לסיבוב נגדי)</span></li>
+                <li><b><kbd>↓</kbd></b><span><strong>חץ למטה</strong>ירידה מהירה יותר</span></li>
+                <li><b><kbd>רווח</kbd></b><span><strong>רווח</strong>הפלה מיידית</span></li>
+                <li><b><kbd>C</kbd></b><span><strong>C</strong>שמירת החלק בצד להמשך</span></li>
+                <li><b><kbd>P</kbd></b><span><strong>P</strong>השהיה</span></li>
+              </ul>
+            </section>
+
+            <section class="tut-page" hidden>
+              <h2>קומבואים <span class="jp">コンボ</span></h2>
+              <ul class="tut-list combos">
+                <li><b class="jp">コンボ</b><span><strong>קומבו</strong>ניקוי שורות בכמה חלקים ברצף. כל חוליה מוסיפה בונוס, והצליל עולה טון אחרי טון.</span></li>
+                <li><b class="jp">満開</b><span><strong>טטריס</strong>4 שורות במכה אחת: 800 נקודות ופרח ענק.</span></li>
+                <li><b class="jp">T</b><span><strong>טי-ספין</strong>סובבו את ה-T לתוך חריץ צר רגע לפני שהוא ננעל: עד 1,600 נקודות.</span></li>
+                <li><b class="jp">連続</b><span><strong>ברצף</strong>טטריס או טי-ספין פעמיים ברצף: הניקוד ×1.5.</span></li>
+                <li><b class="jp">完璧</b><span><strong>לוח נקי</strong>ניקוי של כל הלוח: בונוס 2,000.</span></li>
+              </ul>
+              <p class="tut-note">כל הניקוד מוכפל במספר השלב, ולכל קומבו יש צליל משלו. נסו לשמוע את כולם!</p>
+            </section>
+
+            <section class="tut-page" hidden>
+              <div class="tut-icon">⏱️</div>
+              <h2>המהירות עולה</h2>
+              <p>כל 10 שורות, או כל 40 שניות, עולים שלב והקוביות נופלות מהר יותר.</p>
+              <p>הפס הוורוד בראש הלוח מתמלא עד ההאצה הבאה.</p>
+            </section>
+
+            <div class="tut-dots" id="tut-dots"></div>
+            <button id="tut-next" class="primary-btn" type="button">הבא</button>
           </div>
         </div>
       </div>
@@ -75,17 +133,6 @@
       </div>
     </section>
   </main>
-
-  <nav class="touch" dir="ltr" aria-label="שליטה במגע">
-    <button data-act="hold" type="button">⇄</button>
-    <button data-act="left" type="button">◀</button>
-    <button data-act="down" type="button">▼</button>
-    <button data-act="right" type="button">▶</button>
-    <button data-act="rotate" type="button">⟳</button>
-    <button data-act="drop" type="button">⤓</button>
-    <button data-act="pause" type="button">❚❚</button>
-    <button data-act="music" type="button">♪</button>
-  </nav>
 
   <canvas id="fx" aria-hidden="true"></canvas>
   <div id="popups" dir="rtl"></div>
