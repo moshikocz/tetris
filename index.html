@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <canvas id="garden-bg" aria-hidden="true"></canvas>
   <canvas id="ambient" aria-hidden="true"></canvas>
 
   <main class="game" dir="ltr">
@@ -27,7 +28,7 @@
       <div class="stat-grid">
         <div class="stat"><span>ניקוד</span><b id="score">0</b></div>
         <div class="stat"><span>שיא</span><b id="best">0</b></div>
-        <div class="stat"><span>שלב</span><b id="level">1</b></div>
+        <div class="stat"><span id="level-label">שלב</span><b id="level">1</b></div>
         <div class="stat"><span>שורות</span><b id="lines">0</b></div>
       </div>
       <button id="pause-btn" class="pause-btn" type="button" aria-label="השהיה">❚❚</button>
@@ -39,17 +40,127 @@
         <div class="speed-bar" id="speed-bar" aria-hidden="true"><i id="speed-fill"></i></div>
         <canvas id="board"></canvas>
         <div class="combo-badge jp hidden" id="combo-badge" dir="ltr" aria-live="polite"></div>
+        <div class="fever-badge hidden" id="fever-badge" dir="rtl"></div>
+        <div class="mode-hud hidden" id="mode-hud" dir="rtl"></div>
         <div class="overlay" id="overlay" dir="rtl">
-          <div class="sign">
-            <div class="jp big">桜</div>
-            <h2 id="overlay-title">טטריס עץ</h2>
-            <p id="overlay-text">נקו שורות ותנו לפריחת הדובדבן להתפוצץ על המסך</p>
-            <button id="start-btn" class="primary-btn" type="button">התחל</button>
-            <div class="ov-row">
-              <button id="howto-btn" class="small-btn" type="button">❓ איך משחקים</button>
-              <button id="ov-music-btn" class="small-btn" type="button">🎵 מוזיקה</button>
-              <button id="ov-sound-btn" class="small-btn" type="button">🔊 צליל</button>
-            </div>
+          <div class="sign" id="sign">
+
+            <section class="panel" data-panel="menu">
+              <div class="jp big">桜</div>
+              <h2>טטריס עץ</h2>
+              <div class="streak" id="streak-line"></div>
+              <div class="modes">
+                <button class="mode-btn primary-mode" data-mode="marathon" type="button">
+                  <b>מרתון <span class="jp">マラソン</span></b><small id="mode-sub-marathon">אינסופי, המהירות עולה</small>
+                </button>
+                <button class="mode-btn" data-mode="daily" type="button">
+                  <b>אתגר יומי <span class="jp">今日</span></b><small id="mode-sub-daily"></small>
+                </button>
+                <button class="mode-btn" data-mode="sprint" type="button">
+                  <b>ספרינט 40 <span class="jp">速</span></b><small id="mode-sub-sprint"></small>
+                </button>
+                <button class="mode-btn" data-mode="zen" type="button">
+                  <b>זן <span class="jp">禅</span></b><small>בלי לחץ ובלי האצה</small>
+                </button>
+                <button class="mode-btn" data-mode="puzzle" type="button">
+                  <b>חידות <span class="jp">謎</span></b><small id="mode-sub-puzzle"></small>
+                </button>
+              </div>
+              <div class="nav-row">
+                <button class="nav-btn" data-goto="missions" type="button">🎯<span>משימות</span><i class="dot hidden" id="missions-dot"></i></button>
+                <button class="nav-btn" data-goto="garden" type="button">🌸<span>הגן</span></button>
+                <button class="nav-btn" data-goto="collection" type="button">🎨<span>אוסף</span><i class="dot hidden" id="collection-dot"></i></button>
+                <button class="nav-btn" data-goto="leaders" type="button">🏆<span>שיאים</span></button>
+              </div>
+              <div class="ov-row">
+                <button class="small-btn howto-btn" type="button">❓ איך משחקים</button>
+                <button class="small-btn music-toggle" type="button">🎵 מוזיקה</button>
+                <button class="small-btn sound-toggle" type="button">🔊 צליל</button>
+              </div>
+            </section>
+
+            <section class="panel" data-panel="pause" hidden>
+              <div class="jp big">休</div>
+              <h2>הפסקה</h2>
+              <p>תה ירוק וממשיכים 🍵</p>
+              <button class="primary-btn" id="resume-btn" type="button">המשך</button>
+              <button class="link-btn" data-goto="menu" data-quit="1" type="button">יציאה לתפריט</button>
+              <div class="ov-row">
+                <button class="small-btn howto-btn" type="button">❓ איך משחקים</button>
+                <button class="small-btn music-toggle" type="button">🎵 מוזיקה</button>
+                <button class="small-btn sound-toggle" type="button">🔊 צליל</button>
+              </div>
+            </section>
+
+            <section class="panel" data-panel="over" hidden>
+              <div class="jp big" id="over-jp">終</div>
+              <h2 id="over-title">המשחק נגמר</h2>
+              <div class="record hidden" id="over-record">שיא חדש! 🎉</div>
+              <dl class="over-stats" id="over-stats"></dl>
+              <ul class="over-news" id="over-news"></ul>
+              <button class="primary-btn" id="again-btn" type="button">שוב</button>
+              <div class="ov-row">
+                <button class="small-btn" data-goto="share" type="button">📤 שיתוף</button>
+                <button class="small-btn" data-goto="menu" type="button">🏠 תפריט</button>
+              </div>
+            </section>
+
+            <section class="panel" data-panel="puzzles" hidden>
+              <h2>חידות <span class="jp">謎</span></h2>
+              <p>נקו את השורות עם החלקים שקיבלתם. אין החזקה, ואין חלקים נוספים.</p>
+              <div class="puzzle-grid" id="puzzle-grid"></div>
+              <button class="link-btn" data-goto="menu" type="button">→ חזרה</button>
+            </section>
+
+            <section class="panel" data-panel="missions" hidden>
+              <h2>משימות <span class="jp">任務</span></h2>
+              <p>שלוש משימות פעילות. כל משימה שמושלמת מתחלפת בחדשה ומקרבת אתכם לפריטים באוסף.</p>
+              <ul class="mission-list" id="mission-list"></ul>
+              <p class="muted" id="missions-total"></p>
+              <button class="link-btn" data-goto="menu" type="button">→ חזרה</button>
+            </section>
+
+            <section class="panel" data-panel="garden" hidden>
+              <h2>הגן שלי <span class="jp">庭</span></h2>
+              <canvas id="garden-canvas" width="600" height="600"></canvas>
+              <p id="garden-text"></p>
+              <button class="link-btn" data-goto="menu" type="button">→ חזרה</button>
+            </section>
+
+            <section class="panel" data-panel="collection" hidden>
+              <h2>אוסף <span class="jp">収集</span></h2>
+              <h3>קוביות</h3>
+              <div class="collect-grid" id="skin-grid"></div>
+              <h3>פרחים</h3>
+              <div class="collect-grid" id="flower-grid"></div>
+              <button class="link-btn" data-goto="menu" type="button">→ חזרה</button>
+            </section>
+
+            <section class="panel" data-panel="leaders" hidden>
+              <h2>שיאים <span class="jp">記録</span></h2>
+              <div class="tabs" id="board-tabs">
+                <button type="button" data-board="marathon" class="on">מרתון</button>
+                <button type="button" data-board="sprint">ספרינט</button>
+                <button type="button" data-board="daily">היום</button>
+              </div>
+              <ol class="board-list" id="board-list"></ol>
+              <p class="muted" id="board-note"></p>
+              <button class="link-btn" data-goto="menu" type="button">→ חזרה</button>
+            </section>
+
+            <section class="panel" data-panel="share" hidden>
+              <h2>שיתוף</h2>
+              <img id="share-img" alt="כרטיס התוצאה שלך">
+              <textarea id="share-text" rows="3" readonly></textarea>
+              <div class="ov-row">
+                <button class="small-btn" id="share-native" type="button">📤 שיתוף</button>
+                <button class="small-btn" id="share-save" type="button">💾 שמירת תמונה</button>
+                <button class="small-btn" id="share-copy" type="button">📋 העתקת טקסט</button>
+              </div>
+              <p class="muted" id="share-status" aria-live="polite"></p>
+              <button class="link-btn" data-goto="over" type="button">→ חזרה</button>
+            </section>
+
           </div>
         </div>
 
@@ -92,6 +203,7 @@
                 <li><b class="jp">T</b><span><strong>טי-ספין</strong>סובבו את ה-T לתוך חריץ צר רגע לפני שהוא ננעל: עד 1,600 נקודות.</span></li>
                 <li><b class="jp">連続</b><span><strong>ברצף</strong>טטריס או טי-ספין פעמיים ברצף: הניקוד ×1.5.</span></li>
                 <li><b class="jp">完璧</b><span><strong>לוח נקי</strong>ניקוי של כל הלוח: בונוס 2,000.</span></li>
+                <li><b class="jp">熱</b><span><strong>פיבר</strong>קומבו ×5 מדליק מצב פיבר: ניקוד כפול ל-12 שניות.</span></li>
               </ul>
               <p class="tut-note">כל הניקוד מוכפל במספר השלב, ולכל קומבו יש צליל משלו. נסו לשמוע את כולם!</p>
             </section>
@@ -100,7 +212,8 @@
               <div class="tut-icon">⏱️</div>
               <h2>המהירות עולה</h2>
               <p>כל 10 שורות, או כל 40 שניות, עולים שלב והקוביות נופלות מהר יותר.</p>
-              <p>הפס הוורוד בראש הלוח מתמלא עד ההאצה הבאה.</p>
+              <p>הפס הוורוד בראש הלוח מתמלא עד ההאצה הבאה, וכל כמה שלבים מתחלפת עונה.</p>
+              <p>כשהקוביות מתקרבות לתקרה הלוח מאדים. שורה שחסרה בה משבצת אחת זוהרת בוורוד.</p>
             </section>
 
             <div class="tut-dots" id="tut-dots"></div>
@@ -108,6 +221,11 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="mascot" id="mascot-box" aria-hidden="true">
+      <canvas id="mascot" width="128" height="128"></canvas>
+      <div class="bubble hidden" id="bubble" dir="rtl"><b class="jp" id="bubble-jp" dir="ltr"></b><span id="bubble-he"></span></div>
     </section>
 
     <section class="next plaque" dir="rtl">
@@ -136,6 +254,7 @@
 
   <canvas id="fx" aria-hidden="true"></canvas>
   <div id="popups" dir="rtl"></div>
+  <div id="toasts" dir="rtl" aria-live="polite"></div>
   <script src="js/game.js"></script>
 </body>
 </html>

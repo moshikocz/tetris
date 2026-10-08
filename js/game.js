@@ -91,6 +91,15 @@
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   };
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
   // keeps "+250" and "×4" in order inside right-to-left Hebrew text
   const ltr = (s) => '\u2066' + s + '\u2069';
 
@@ -231,18 +240,91 @@
     return c;
   }
 
-  function woodTile(type, variant) {
-    const wood = WOODS[type];
+  // a bright accent per piece, used by the lacquer and bamboo skins
+  const ACCENTS = {
+    I: [110, 205, 230], J: [90, 125, 215], L: [240, 160, 64], O: [242, 210, 74],
+    S: [124, 196, 106], T: [200, 106, 214], Z: [224, 80, 80],
+  };
+
+  // the face of a block before bevels: natural wood, bamboo, black lacquer or gold-leaf lacquer
+  function tileBase(type, variant, skin) {
     const s = TILE;
-    const base = woodCanvas(s, s, {
+    const seed = TYPES.indexOf(type) * 13 + variant * 5 + 1;
+    const a = ACCENTS[type];
+    const c = makeCanvas(s, s);
+    const ctx = c.getContext('2d');
+    if (skin === 'bamboo') {
+      const light = [226, 216, 140].map((v, i) => lerp(v, a[i], 0.3));
+      const dark = [150, 150, 64].map((v, i) => lerp(v, a[i] * 0.6, 0.3));
+      const g = woodCanvas(s, s, { light, dark, seed, ringFreq: 0.35, warp: 1.2, fiber: 0.35 });
+      ctx.translate(s / 2, s / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(g, -s / 2, -s / 2);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const ny = s * (0.3 + variant * 0.2);
+      ctx.fillStyle = 'rgba(70,60,20,.55)';
+      ctx.fillRect(0, ny - 2, s, 3);
+      ctx.fillStyle = 'rgba(255,250,200,.4)';
+      ctx.fillRect(0, ny + 1, s, 2);
+      return c;
+    }
+    if (skin === 'kuro') {
+      ctx.drawImage(woodCanvas(s, s, { light: [62, 32, 28], dark: [16, 9, 8], seed, ringFreq: 0.09, warp: 5, fiber: 0.15 }), 0, 0);
+      ctx.fillStyle = `rgba(${a},.18)`;
+      ctx.fillRect(0, 0, s, s);
+      ctx.lineWidth = s * 0.07;
+      ctx.strokeStyle = `rgb(${a})`;
+      roundRectPath(ctx, s * 0.16, s * 0.16, s * 0.68, s * 0.68, s * 0.08);
+      ctx.stroke();
+      return c;
+    }
+    if (skin === 'gold') {
+      const light = a.map((v) => Math.min(255, v * 1.05));
+      const dark = a.map((v) => v * 0.5);
+      ctx.drawImage(woodCanvas(s, s, { light, dark, seed, ringFreq: 0.06, warp: 4, fiber: 0.12 }), 0, 0);
+      const r = mulberry32(seed * 31 + 7);
+      for (let i = 0; i < 16; i++) {
+        const x = r() * s, y = r() * s, k = 2 + r() * 4;
+        ctx.fillStyle = r() > 0.5 ? '#ffe08a' : '#d4a020';
+        ctx.beginPath();
+        ctx.moveTo(x, y - k);
+        ctx.lineTo(x + k, y + r() * k);
+        ctx.lineTo(x - k * 0.6, y + k);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // kintsugi seam
+      ctx.beginPath();
+      let x = 0, y = s * (0.2 + r() * 0.6);
+      ctx.moveTo(x, y);
+      while (x < s) {
+        x += 6 + r() * 10;
+        y = clamp(y + (r() - 0.5) * 18, 6, s - 6);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#ffd54a';
+      ctx.shadowColor = 'rgba(255,220,120,.9)';
+      ctx.shadowBlur = 4;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      return c;
+    }
+    const wood = WOODS[type];
+    return woodCanvas(s, s, {
       light: wood.light,
       dark: wood.dark,
-      seed: TYPES.indexOf(type) * 13 + variant * 5 + 1,
+      seed,
       ringFreq: 0.11,
       warp: 5,
       fiber: 0.25,
       knot: variant === 2 ? { x: rand(18, 46), y: rand(18, 46), rx: 7, ry: 4 } : null,
     });
+  }
+
+  function woodTile(type, variant, skin = 'classic') {
+    const s = TILE;
+    const base = tileBase(type, variant, skin);
     const c = makeCanvas(s, s);
     const ctx = c.getContext('2d');
     const r = s * 0.14;
@@ -608,6 +690,27 @@
       this.bell(2093, 0.8, 2.5, 0.15);
       [0, 0.12, 0.24, 0.5].forEach((w) => this.taiko(w, 0.8));
     },
+    feverStart() {
+      this.swoosh(0, 'bandpass', 400, 5000, 0.6, 0.4);
+      [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98, 2093].forEach((f, i) => this.pluck(f, 0.05 + i * 0.05));
+      this.taiko(0, 0.8);
+      this.taiko(0.15, 0.8);
+    },
+    dangerEnter() {
+      this.bell(196, 0, 1.2, 0.2);
+      this.bell(185, 0.25, 1.2, 0.2);
+    },
+    relief() {
+      this.bell(783.99, 0, 1.6, 0.12);
+      this.bell(987.77, 0.08, 1.6, 0.1);
+      this.bell(1174.66, 0.16, 1.8, 0.1);
+    },
+    mission() {
+      [1046.5, 1318.51, 1567.98, 2093].forEach((f, i) => this.bell(f, i * 0.09, 1.2, 0.12));
+    },
+    gameOver() {
+      [392, 349.23, 311.13, 261.63].forEach((f, i) => this.pluck(f, i * 0.18));
+    },
     speedUp() {
       this.swoosh(0, 'bandpass', 500, 3500, 0.5, 0.35);
       this.bell(783.99, 0.35, 0.9, 0.14);
@@ -655,6 +758,8 @@
 
   const Music = {
     on: true,
+    fever: false,
+    tension: false,
     playing: false,
     bpm: 150,
     step: 0,
@@ -737,7 +842,7 @@
     playStep(step, t) {
       const bar = Math.floor(step / 16) % 16;
       const s = step % 16;
-      const chorus = bar >= 8;
+      const chorus = bar >= 8 || this.fever;
       const chord = CHORDS[PROGRESSION[bar % 8]];
       const sd = this.stepDur();
       const fill = bar === 7 && s >= 12;
@@ -752,6 +857,8 @@
       if (chorus) this.hat(t, s % 4 === 2, s % 2 ? 0.5 : 1);
       else if (s % 2 === 0) this.hat(t, false, s % 4 ? 0.6 : 1);
       if (bar % 8 === 0 && s === 0 && step > 0) this.crash(t);
+      if (this.tension && s % 8 === 0) this.heart(t, 0.8);
+      if (this.tension && s % 8 === 3) this.heart(t, 0.5);
 
       // driving 8th-note bass with octave jumps
       if (s % 2 === 0) {
@@ -778,6 +885,17 @@
       g.gain.exponentialRampToValueAtTime(peak, t + attack);
       g.gain.setValueAtTime(peak, t + Math.max(attack, dur - release));
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    },
+
+    heart(t, v) {
+      const ac = Sound.ctx;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(70, t);
+      o.frequency.exponentialRampToValueAtTime(38, t + 0.15);
+      g.gain.setValueAtTime(v, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      o.connect(g).connect(this.out);
+      o.start(t); o.stop(t + 0.28);
     },
 
     kick(t) {
@@ -935,15 +1053,45 @@
   const frame = $('frame');
   const popups = $('popups');
   const overlay = $('overlay');
-  const overlayTitle = $('overlay-title');
-  const overlayText = $('overlay-text');
-  const startBtn = $('start-btn');
+  const sign = $('sign');
   const muteBtn = $('mute-btn');
   const pauseBtn = $('pause-btn');
-  const howtoBtn = $('howto-btn');
-  const ovMusicBtn = $('ov-music-btn');
-  const ovSoundBtn = $('ov-sound-btn');
   const comboBadge = $('combo-badge');
+  const feverBadge = $('fever-badge');
+  const modeHud = $('mode-hud');
+  const levelLabel = $('level-label');
+  const mascotCanvas = $('mascot');
+  mascotCanvas.width = mascotCanvas.height = 192;
+  const bubble = $('bubble');
+  const bubbleJp = $('bubble-jp');
+  const bubbleHe = $('bubble-he');
+  const toasts = $('toasts');
+  const gardenBg = $('garden-bg');
+  const gardenCanvas = $('garden-canvas');
+  const gardenText = $('garden-text');
+  const streakLine = $('streak-line');
+  const collectionDot = $('collection-dot');
+  const puzzleGrid = $('puzzle-grid');
+  const missionList = $('mission-list');
+  const missionsTotal = $('missions-total');
+  const skinGrid = $('skin-grid');
+  const flowerGrid = $('flower-grid');
+  const boardTabs = $('board-tabs');
+  const boardList = $('board-list');
+  const boardNote = $('board-note');
+  const shareImg = $('share-img');
+  const shareTextEl = $('share-text');
+  const shareNative = $('share-native');
+  const shareSave = $('share-save');
+  const shareCopy = $('share-copy');
+  const shareStatus = $('share-status');
+  const overJp = $('over-jp');
+  const overTitle = $('over-title');
+  const overRecord = $('over-record');
+  const overStats = $('over-stats');
+  const overNews = $('over-news');
+  const againBtn = $('again-btn');
+  const resumeBtn = $('resume-btn');
   const speedBar = $('speed-bar');
   const speedFill = $('speed-fill');
   const tutorial = $('tutorial');
@@ -974,10 +1122,16 @@
   // Build assets
   // ---------------------------------------------------------------------------
   const tiles = {};
-  for (const t of TYPES) {
-    tiles[t] = [];
-    for (let v = 0; v < VARIANTS; v++) tiles[t].push(woodTile(t, v));
+  let tileSkin = null;
+  function buildTiles(skin) {
+    if (skin === tileSkin) return;
+    tileSkin = skin;
+    for (const t of TYPES) {
+      tiles[t] = [];
+      for (let v = 0; v < VARIANTS; v++) tiles[t].push(woodTile(t, v, skin));
+    }
   }
+  buildTiles('classic');
 
   const boardBg = (() => {
     const w = COLS * TILE, h = ROWS * TILE;
@@ -1022,13 +1176,201 @@
     }).toDataURL()})`);
   })();
 
-  const blossoms = [];
-  PALETTES.forEach((p, i) => {
-    blossoms.push(makeBlossom(p, 'sakura'));
-    blossoms.push(makeBlossom(p, i % 2 ? 'ume' : 'yae'));
-  });
-  const bigBlossom = makeBlossom(PALETTES[0], 'yae');
-  const petals = PALETTES.map(makePetal);
+  const FLOWER_PALETTES = {
+    sakura: PALETTES,
+    wisteria: [
+      { edge: '#a77bff', mid: '#f4ecff', core: '#6a2fd0', line: '#55259f' },
+      { edge: '#c9a7ff', mid: '#ffffff', core: '#8f5ae8', line: '#6d3bbd' },
+      { edge: '#8f6bff', mid: '#e6dcff', core: '#4b22a8', line: '#3a1a86' },
+      { edge: '#e0b8ff', mid: '#fbf3ff', core: '#b45ad6', line: '#8a3aa8' },
+    ],
+    camellia: [
+      { edge: '#d81b3c', mid: '#ff6f86', core: '#9e0c25', line: '#7a0a1c' },
+      { edge: '#ff7a9a', mid: '#ffe3ea', core: '#e0456a', line: '#b52a4c' },
+      { edge: '#f2f2f2', mid: '#ffffff', core: '#ffb3c4', line: '#c98a99' },
+      { edge: '#c2185b', mid: '#ff8fb5', core: '#880e4f', line: '#6a0b3d' },
+    ],
+    kiku: [
+      { edge: '#ffb300', mid: '#fff3c4', core: '#e65100', line: '#b85c00' },
+      { edge: '#ffffff', mid: '#fffdf5', core: '#ffd54f', line: '#c8a64a' },
+      { edge: '#ff8a50', mid: '#ffe0c8', core: '#d84315', line: '#a83210' },
+      { edge: '#f48fb1', mid: '#fff0f5', core: '#c2185b', line: '#99154a' },
+    ],
+  };
+
+  function flowerGlow(ctx, S, R) {
+    const glow = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, S * 0.5);
+    glow.addColorStop(0, 'rgba(255,220,230,.5)');
+    glow.addColorStop(1, 'rgba(255,220,230,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(-S / 2, -S / 2, S, S);
+  }
+
+  function stamens(ctx, S, R, pal, n, len) {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const l = R * len * (i % 2 ? 0.8 : 1);
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * l, Math.sin(a) * l, S * 0.02, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffd94d';
+      ctx.fill();
+      ctx.lineWidth = S * 0.007;
+      ctx.strokeStyle = '#d98a14';
+      ctx.stroke();
+    }
+  }
+
+  // camellia: round overlapping petals in two rings around a golden crown
+  function makeCamellia(pal) {
+    const S = 160, R = S * 0.42;
+    const c = makeCanvas(S, S);
+    const ctx = c.getContext('2d');
+    ctx.translate(S / 2, S / 2);
+    flowerGlow(ctx, S, R);
+    for (const [n, dist, rx, ry, off] of [[6, 0.5, 0.36, 0.44, 0], [5, 0.26, 0.28, 0.32, 0.6]]) {
+      for (let i = 0; i < n; i++) {
+        ctx.save();
+        ctx.rotate(off + (i * Math.PI * 2) / n);
+        ctx.translate(0, -R * dist);
+        const g = ctx.createRadialGradient(0, R * 0.3, 0, 0, 0, R * ry * 1.3);
+        g.addColorStop(0, pal.mid);
+        g.addColorStop(1, pal.edge);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, R * rx, R * ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = g;
+        ctx.fill();
+        ctx.lineWidth = S * 0.02;
+        ctx.strokeStyle = pal.line;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.55)';
+        ctx.beginPath();
+        ctx.ellipse(-R * rx * 0.35, -R * ry * 0.35, R * 0.05, R * 0.13, -0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.16, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffe27a';
+    ctx.fill();
+    stamens(ctx, S, R, pal, 14, 0.2);
+    drawStar(ctx, R * 0.62, -R * 0.7, S * 0.08, '#fff');
+    return c;
+  }
+
+  // chrysanthemum: many thin petals in two layers
+  function makeKiku(pal) {
+    const S = 160, R = S * 0.44;
+    const c = makeCanvas(S, S);
+    const ctx = c.getContext('2d');
+    ctx.translate(S / 2, S / 2);
+    flowerGlow(ctx, S, R);
+    for (const [n, len, w, off] of [[24, 1, 0.1, 0], [16, 0.68, 0.11, 0.2]]) {
+      for (let i = 0; i < n; i++) {
+        ctx.save();
+        ctx.rotate(off + (i * Math.PI * 2) / n);
+        const g = ctx.createLinearGradient(0, 0, 0, -R * len);
+        g.addColorStop(0, pal.core);
+        g.addColorStop(0.35, pal.mid);
+        g.addColorStop(1, pal.edge);
+        ctx.beginPath();
+        ctx.ellipse(0, -R * len * 0.55, R * w, R * len * 0.45, 0, 0, Math.PI * 2);
+        ctx.fillStyle = g;
+        ctx.fill();
+        ctx.lineWidth = S * 0.012;
+        ctx.strokeStyle = pal.line;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.17, 0, Math.PI * 2);
+    ctx.fillStyle = pal.core;
+    ctx.fill();
+    ctx.lineWidth = S * 0.014;
+    ctx.strokeStyle = pal.line;
+    ctx.stroke();
+    stamens(ctx, S, R, pal, 10, 0.1);
+    drawStar(ctx, R * 0.62, -R * 0.68, S * 0.08, '#fff');
+    return c;
+  }
+
+  let blossoms = [];
+  let bigBlossom = null;
+  let petals = [];
+  let flowerSet = null;
+  function buildFlowers(id) {
+    if (id === flowerSet) return;
+    flowerSet = id;
+    const pals = FLOWER_PALETTES[id] || PALETTES;
+    blossoms = [];
+    pals.forEach((p, i) => {
+      if (id === 'camellia') blossoms.push(makeCamellia(p));
+      else if (id === 'kiku') blossoms.push(makeKiku(p));
+      else {
+        blossoms.push(makeBlossom(p, 'sakura'));
+        blossoms.push(makeBlossom(p, i % 2 ? 'ume' : 'yae'));
+      }
+    });
+    bigBlossom = id === 'camellia' ? makeCamellia(pals[0]) : id === 'kiku' ? makeKiku(pals[0]) : makeBlossom(pals[0], 'yae');
+    petals = pals.map(makePetal);
+  }
+  buildFlowers('sakura');
+  const spinBlossoms = [makeBlossom(PALETTES[3], 'sakura'), makeBlossom(PALETTES[3], 'ume')];
+
+  // ---- seasonal ambient sprites
+  function makeMaple(color, dark) {
+    const S = 48, R = S * 0.44;
+    const c = makeCanvas(S, S);
+    const ctx = c.getContext('2d');
+    ctx.translate(S / 2, S / 2);
+    ctx.beginPath();
+    const N = 90;
+    for (let i = 0; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+      const lobe = Math.pow(Math.abs(Math.cos(2.5 * (a + Math.PI / 2))), 0.7);
+      const r = R * (0.4 + 0.6 * lobe) + R * 0.06 * Math.sin(a * 26);
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    g.addColorStop(0, color);
+    g.addColorStop(1, dark);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = dark;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(80,20,0,.5)';
+    for (let k = 0; k < 5; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI * 2) / 5;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * R * 0.8, Math.sin(a) * R * 0.8);
+      ctx.stroke();
+    }
+    return c;
+  }
+
+  function makeGlowDot(inner, outer) {
+    const S = 32;
+    const c = makeCanvas(S, S);
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0, inner);
+    g.addColorStop(0.35, outer);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, S, S);
+    return c;
+  }
+
+  const SEASON_SPRITES = [
+    null, // spring uses the current petals
+    [makeGlowDot('rgba(255,255,200,1)', 'rgba(190,255,110,.55)')],
+    [makeMaple('#e53935', '#8e1b1b'), makeMaple('#ff7043', '#a8361a'), makeMaple('#ffb300', '#c25e00')],
+    [makeGlowDot('rgba(255,255,255,1)', 'rgba(230,240,255,.6)')],
+  ];
   const sparkles = ['rgba(255,190,220,.8)', 'rgba(255,240,170,.8)', 'rgba(255,255,255,.8)'].map(makeSparkle);
 
   // ---------------------------------------------------------------------------
@@ -1146,7 +1488,7 @@
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
       addBlossom(cx, cy, {
-        img: blossoms[6 + (i % 2)], vx: Math.cos(a) * 320, vy: Math.sin(a) * 320 - 60,
+        img: spinBlossoms[i % 2], vx: Math.cos(a) * 320, vy: Math.sin(a) * 320 - 60,
         g: 200, size: rand(36, 54), life: 1.6,
       });
     }
@@ -1200,15 +1542,20 @@
     ctx.restore();
   }
 
+  // 0 spring petals, 1 summer fireflies, 2 autumn maple leaves, 3 winter snow
+  let season = 0;
+  const SEASON_COUNTS = [18, 14, 16, 40];
+
   function initAmbient() {
     ambient.length = 0;
-    const n = reduceMotion ? 6 : 18;
+    const n = reduceMotion ? 6 : SEASON_COUNTS[season];
     for (let i = 0; i < n; i++) ambient.push(newAmbientPetal(true));
   }
 
   function newAmbientPetal(anywhere) {
-    return {
-      img: pick(petals),
+    const p = {
+      kind: season,
+      img: null,
       x: rand(0, vw),
       y: anywhere ? rand(0, vh) : rand(-60, -20),
       vy: rand(18, 45),
@@ -1221,6 +1568,26 @@
       sway: rand(15, 35),
       age: 0,
     };
+    if (season === 0) {
+      p.img = pick(petals);
+    } else if (season === 1) {
+      p.img = SEASON_SPRITES[1][0];
+      if (!anywhere) p.y = vh + 20;
+      p.vy = rand(-14, -4);
+      p.vx = rand(-8, 8);
+      p.size = rand(10, 18);
+      p.sway = rand(10, 25);
+    } else if (season === 2) {
+      p.img = pick(SEASON_SPRITES[2]);
+      p.size = rand(16, 26);
+      p.vy = rand(25, 50);
+    } else {
+      p.img = SEASON_SPRITES[3][0];
+      p.size = rand(6, 14);
+      p.vy = rand(20, 40);
+      p.vx = rand(-5, 10);
+    }
+    return p;
   }
 
   function updateAmbient(dt) {
@@ -1230,8 +1597,267 @@
       p.y += p.vy * dt;
       p.x += (p.vx + Math.sin(p.age * 0.9 + p.phase) * p.sway) * dt;
       p.rot += p.vr * dt;
-      if (p.y > vh + 40 || p.x > vw + 40) ambient[i] = newAmbientPetal(false);
+      if (p.y > vh + 40 || p.x > vw + 40 || p.x < -60 || p.y < -80) ambient[i] = newAmbientPetal(false);
     }
+  }
+
+  const SEASON_NAMES = [
+    { jp: '春', he: 'אביב' },
+    { jp: '夏', he: 'קיץ: גחליליות' },
+    { jp: '秋', he: 'סתיו: עלי מייפל' },
+    { jp: '冬', he: 'חורף: שלג' },
+  ];
+
+  function setSeason(i, announce) {
+    if (i === season) return;
+    season = i;
+    document.body.classList.remove('season-0', 'season-1', 'season-2', 'season-3');
+    document.body.classList.add('season-' + i);
+    initAmbient();
+    if (announce) popup(SEASON_NAMES[i].jp, SEASON_NAMES[i].he, 'season', 30);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sakura garden: a tree that grows and blooms with every line ever cleared
+  // ---------------------------------------------------------------------------
+  const gardenBlossoms = PALETTES.map((p) => makeBlossom(p, 'sakura'));
+
+  function drawGarden(canvas, lifetimeLines) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const r = mulberry32(2026);
+    const growth = clamp(lifetimeLines / 400, 0, 1);
+    const depth = 4 + Math.round(growth * 4);
+    const tips = [];
+    const branch = (x, y, len, ang, width, d) => {
+      const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+      ctx.strokeStyle = d < 3 ? '#3b2314' : '#4d2e1a';
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo((x + x2) / 2 + (r() - 0.5) * len * 0.3, (y + y2) / 2, x2, y2);
+      ctx.stroke();
+      if (d > 2) tips.push([x2, y2]);
+      if (d >= depth) return;
+      const n = r() > 0.65 ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        branch(x2, y2, len * (0.68 + r() * 0.12), ang + (i - (n - 1) / 2) * 0.6 + (r() - 0.5) * 0.3, width * 0.68, d + 1);
+      }
+    };
+    // ground
+    const gg = ctx.createRadialGradient(w / 2, h * 0.97, 0, w / 2, h * 0.97, w * 0.45);
+    gg.addColorStop(0, 'rgba(40,22,10,.85)');
+    gg.addColorStop(1, 'rgba(40,22,10,0)');
+    ctx.fillStyle = gg;
+    ctx.fillRect(0, h * 0.85, w, h * 0.15);
+    branch(w / 2, h * 0.96, h * (0.16 + 0.1 * growth), -Math.PI / 2, (w / 60) * (1 + 1.5 * growth), 1);
+    const count = Math.min(tips.length * 5, Math.round(lifetimeLines * 1.5));
+    const unit = w / 300;
+    for (let i = 0; i < count; i++) {
+      const [tx, ty] = tips[Math.floor(r() * tips.length)];
+      const s = (7 + r() * 10) * unit;
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(gardenBlossoms[Math.floor(r() * gardenBlossoms.length)], tx + (r() - 0.5) * 26 * unit - s / 2, ty + (r() - 0.5) * 22 * unit - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+    return { flowers: count, nextAt: Math.ceil((lifetimeLines + 1) / 50) * 50 };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Kitsune mascot, drawn live so it can blink, bounce and change faces
+  // ---------------------------------------------------------------------------
+  function drawMascot(ctx, S, expr, t) {
+    ctx.clearRect(0, 0, S, S);
+    ctx.save();
+    const u = S / 110;
+    const bob = expr === 'excited' ? -Math.abs(Math.sin(t * 8)) * 6 * u : Math.sin(t * 2) * 1.5 * u;
+    const shake = expr === 'scared' ? Math.sin(t * 40) * u : 0;
+    ctx.translate(S / 2 + shake, S * 0.58 + bob);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    const line = '#4a230c';
+    const fur = (y0, y1) => {
+      const g = ctx.createLinearGradient(0, y0, 0, y1);
+      g.addColorStop(0, '#ffb05a');
+      g.addColorStop(1, '#ee7418');
+      return g;
+    };
+
+    // tail
+    ctx.save();
+    ctx.rotate(Math.sin(t * 3) * 0.12);
+    ctx.beginPath();
+    ctx.ellipse(34 * u, 20 * u, 13 * u, 24 * u, 0.9, 0, Math.PI * 2);
+    ctx.fillStyle = fur(0, 40 * u);
+    ctx.fill();
+    ctx.lineWidth = 2.4 * u;
+    ctx.strokeStyle = line;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(46 * u, 6 * u, 6 * u, 9 * u, 0.9, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff6ec';
+    ctx.fill();
+    ctx.restore();
+
+    // ears
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * 12 * u, -24 * u);
+      ctx.lineTo(sx * 33 * u, -50 * u);
+      ctx.lineTo(sx * 36 * u, -12 * u);
+      ctx.closePath();
+      ctx.fillStyle = fur(-50 * u, -12 * u);
+      ctx.fill();
+      ctx.lineWidth = 2.4 * u;
+      ctx.strokeStyle = line;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(sx * 18 * u, -23 * u);
+      ctx.lineTo(sx * 31 * u, -41 * u);
+      ctx.lineTo(sx * 32 * u, -17 * u);
+      ctx.closePath();
+      ctx.fillStyle = '#ffd6c2';
+      ctx.fill();
+    }
+
+    // head
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 37 * u, 30 * u, 0, 0, Math.PI * 2);
+    ctx.fillStyle = fur(-30 * u, 30 * u);
+    ctx.fill();
+    ctx.lineWidth = 2.6 * u;
+    ctx.strokeStyle = line;
+    ctx.stroke();
+    ctx.save();
+    ctx.clip();
+    ctx.beginPath();
+    ctx.ellipse(-13 * u, 15 * u, 17 * u, 14 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(13 * u, 15 * u, 17 * u, 14 * u, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff6ec';
+    ctx.fill();
+    ctx.restore();
+
+    // red kitsune marks + blush
+    ctx.fillStyle = '#e0245e';
+    ctx.beginPath();
+    ctx.ellipse(-7 * u, -21 * u, 2.2 * u, 5 * u, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(7 * u, -21 * u, 2.2 * u, 5 * u, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,110,140,.55)';
+    ctx.beginPath();
+    ctx.ellipse(-24 * u, 9 * u, 6 * u, 3.5 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(24 * u, 9 * u, 6 * u, 3.5 * u, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // eyes
+    ctx.lineWidth = 3 * u;
+    ctx.strokeStyle = line;
+    for (const sx of [-1, 1]) {
+      const ex = sx * 14 * u, ey = -4 * u;
+      if (expr === 'blink') {
+        ctx.beginPath();
+        ctx.moveTo(ex - 6 * u, ey);
+        ctx.quadraticCurveTo(ex, ey + 3 * u, ex + 6 * u, ey);
+        ctx.stroke();
+      } else if (expr === 'happy') {
+        ctx.beginPath();
+        ctx.moveTo(ex - 6 * u, ey + 2 * u);
+        ctx.quadraticCurveTo(ex, ey - 9 * u, ex + 6 * u, ey + 2 * u);
+        ctx.stroke();
+      } else if (expr === 'sad') {
+        ctx.beginPath();
+        ctx.moveTo(ex - 6 * u, ey - 1 * u);
+        ctx.quadraticCurveTo(ex, ey + 4 * u, ex + 6 * u, ey - 1 * u);
+        ctx.stroke();
+      } else if (expr === 'scared') {
+        ctx.beginPath();
+        ctx.ellipse(ex, ey, 7 * u, 8.5 * u, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.lineWidth = 2 * u;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(ex, ey + 1 * u, 2.2 * u, 0, Math.PI * 2);
+        ctx.fillStyle = '#2a1206';
+        ctx.fill();
+        ctx.lineWidth = 3 * u;
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(ex, ey, 6.5 * u, 8.5 * u, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#3a1a0a';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(ex, ey + 3.5 * u, 5 * u, 4 * u, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#9a4416';
+        ctx.fill();
+        if (expr === 'excited') {
+          drawStar(ctx, ex, ey - 1 * u, 7 * u, '#ffe14d');
+        } else {
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(ex - 2 * u, ey - 3.5 * u, 2.6 * u, 0, Math.PI * 2);
+          ctx.arc(ex + 2.4 * u, ey + 2 * u, 1.2 * u, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    if (expr === 'scared') {
+      ctx.beginPath();
+      ctx.moveTo(30 * u, -26 * u);
+      ctx.quadraticCurveTo(36 * u, -16 * u, 30 * u, -13 * u);
+      ctx.quadraticCurveTo(24 * u, -16 * u, 30 * u, -26 * u);
+      ctx.fillStyle = '#8fd3ff';
+      ctx.fill();
+      ctx.lineWidth = 1.5 * u;
+      ctx.stroke();
+    }
+    if (expr === 'sad') {
+      ctx.beginPath();
+      ctx.ellipse(-14 * u, 6 * u, 2 * u, 3.5 * u, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#8fd3ff';
+      ctx.fill();
+    }
+
+    // nose + mouth
+    ctx.beginPath();
+    ctx.ellipse(0, 5 * u, 2.4 * u, 1.7 * u, 0, 0, Math.PI * 2);
+    ctx.fillStyle = line;
+    ctx.fill();
+    ctx.lineWidth = 2 * u;
+    ctx.strokeStyle = line;
+    if (expr === 'happy' || expr === 'excited') {
+      ctx.beginPath();
+      ctx.moveTo(-6 * u, 9 * u);
+      ctx.quadraticCurveTo(0, 21 * u, 6 * u, 9 * u);
+      ctx.closePath();
+      ctx.fillStyle = '#a0283c';
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(0, 14.5 * u, 3 * u, 2 * u, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff8fa8';
+      ctx.fill();
+    } else if (expr === 'scared') {
+      ctx.beginPath();
+      ctx.moveTo(-6 * u, 12 * u);
+      ctx.quadraticCurveTo(-3 * u, 9 * u, 0, 12 * u);
+      ctx.quadraticCurveTo(3 * u, 15 * u, 6 * u, 12 * u);
+      ctx.stroke();
+    } else if (expr === 'sad') {
+      ctx.beginPath();
+      ctx.moveTo(-4 * u, 13 * u);
+      ctx.quadraticCurveTo(0, 9 * u, 4 * u, 13 * u);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(-3 * u, 8 * u, 3 * u, 0, Math.PI);
+      ctx.arc(3 * u, 8 * u, 3 * u, 0, Math.PI);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function renderEffects() {
@@ -1239,10 +1865,10 @@
     actx.clearRect(0, 0, vw, vh);
     for (const p of ambient) {
       actx.save();
-      actx.globalAlpha = 0.55;
+      actx.globalAlpha = p.kind === 1 ? 0.35 + 0.6 * Math.abs(Math.sin(p.age * 1.7 + p.phase)) : p.kind === 3 ? 0.8 : 0.55;
       actx.translate(p.x, p.y);
       actx.rotate(p.rot);
-      actx.scale(Math.cos(p.age * p.flip + p.phase) || 0.05, 1);
+      if (p.kind === 0 || p.kind === 2) actx.scale(Math.cos(p.age * p.flip + p.phase) || 0.05, 1);
       actx.drawImage(p.img, -p.size / 2, -p.size / 2, p.size, p.size);
       actx.restore();
     }
@@ -1277,20 +1903,363 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Modes, puzzles, missions, collection
+  // ---------------------------------------------------------------------------
+  const MODES = {
+    marathon: { name: 'מרתון', levels: true, seasons: true },
+    daily: { name: 'אתגר יומי', levels: true, seasons: true, timeLimit: 180000, seeded: true },
+    sprint: { name: 'ספרינט 40', goalLines: 40 },
+    zen: { name: 'זן', zen: true },
+    puzzle: { name: 'חידות', puzzle: true },
+  };
+
+  // rows are bottom-aligned; '#' is a filled cell
+  const PUZZLES = [
+    { name: 'הטטריס הראשון', pieces: ['I'], goal: 4, rows: ['#########.', '#########.', '#########.', '#########.'] },
+    { name: 'קובייה במקום', pieces: ['O'], goal: 2, rows: ['####..####', '####..####'] },
+    { name: 'וו', pieces: ['J'], goal: 2, rows: ['#######...', '#########.'] },
+    { name: 'שני עמודים', pieces: ['I', 'I'], goal: 4, rows: ['########..', '########..', '########..', '########..'] },
+    { name: 'מראה', pieces: ['L', 'J'], goal: 2, rows: ['...####...', '.########.'] },
+    { name: 'גג ועמוד', pieces: ['O', 'I'], goal: 4, rows: ['.#######..', '.#######..', '.#########', '.#########'] },
+    {
+      name: 'טי-ספין', pieces: ['T'], goal: 2, rows: ['####......', '###...####', '####.#####'],
+      hint: 'הורידו את ה-T לאט עד למטה, ורק אז סובבו אותו לתוך החריץ',
+    },
+  ];
+
+  const MISSION_POOL = [
+    { id: 'lines30', text: 'נקו 30 שורות', key: 'lines', target: 30 },
+    { id: 'lines80', text: 'נקו 80 שורות', key: 'lines', target: 80 },
+    { id: 'tetris1', text: 'עשו טטריס', key: 'tetris', target: 1 },
+    { id: 'tetris3', text: 'עשו 3 טטריסים', key: 'tetris', target: 3 },
+    { id: 'tspin1', text: 'עשו טי-ספין', key: 'tspin', target: 1 },
+    { id: 'combo3', text: 'הגיעו לקומבו ×3', key: 'comboMax', target: 3, max: true },
+    { id: 'combo5', text: 'הגיעו לקומבו ×5', key: 'comboMax', target: 5, max: true },
+    { id: 'score5k', text: 'השיגו 5,000 נקודות במשחק אחד', key: 'gameScore', target: 5000, max: true },
+    { id: 'score15k', text: 'השיגו 15,000 נקודות במשחק אחד', key: 'gameScore', target: 15000, max: true },
+    { id: 'fever', text: 'היכנסו למצב פיבר', key: 'fever', target: 1 },
+    { id: 'level5', text: 'הגיעו לשלב 5', key: 'level', target: 5, max: true },
+    { id: 'daily', text: 'שחקו את האתגר היומי', key: 'daily', target: 1 },
+    { id: 'sprint', text: 'סיימו ספרינט 40', key: 'sprint', target: 1 },
+    { id: 'puzzle2', text: 'פתרו 2 חידות', key: 'puzzle', target: 2 },
+    { id: 'b2b', text: 'עשו טטריס או טי-ספין פעמיים ברצף', key: 'b2b', target: 1 },
+  ];
+
+  const DAILY_GOALS = [
+    { key: 'lines', target: 25, text: 'נקו 25 שורות' },
+    { key: 'tetris', target: 2, text: 'עשו 2 טטריסים' },
+    { key: 'comboMax', target: 4, text: 'הגיעו לקומבו ×4' },
+    { key: 'score', target: 8000, text: 'השיגו 8,000 נקודות' },
+    { key: 'tspin', target: 1, text: 'עשו טי-ספין' },
+  ];
+
+  const SKINS = [
+    { id: 'classic', name: 'עץ טבעי' },
+    { id: 'bamboo', name: 'במבוק', need: 'נקו 100 שורות בסך הכול', prog: () => [P.lifeLines, 100] },
+    { id: 'kuro', name: 'לכה שחורה', need: 'עשו 5 טטריסים בסך הכול', prog: () => [P.lifeTetris, 5] },
+    { id: 'gold', name: 'עלה זהב', need: 'השלימו 6 משימות', prog: () => [P.missionsDone, 6] },
+  ];
+  const FLOWERS = [
+    { id: 'sakura', name: 'סאקורה' },
+    { id: 'wisteria', name: 'ויסטריה', need: 'השלימו 3 משימות', prog: () => [P.missionsDone, 3] },
+    { id: 'camellia', name: 'קמליה', need: 'פתרו 4 חידות', prog: () => [P.puzzles.length, 4] },
+    { id: 'kiku', name: 'כריזנטמה', need: 'שחקו 3 ימים ברצף', prog: () => [P.streak.best, 3] },
+  ];
+  const isUnlocked = (item) => !item.prog || item.prog()[0] >= item.prog()[1];
+
+  const SAYINGS = {
+    start: ['がんばって!', 'בהצלחה!'],
+    tetris: ['すごい!', 'מדהים!'],
+    combo: ['いいね!', 'יפה!'],
+    tspin: ['かっこいい!', 'מגניב!'],
+    perfect: ['完璧だ!', 'מושלם!'],
+    danger: ['あぶない!', 'זהירות!'],
+    relief: ['ふぅ…', 'פיו, ניצלנו'],
+    fever: ['フィーバー!', 'פיבר!'],
+    speed: ['はやい!', 'מהר!'],
+    over: ['またね…', 'נתראה בפעם הבאה'],
+    record: ['新記録!', 'שיא חדש!'],
+    b2b: ['連続だ!', 'ברצף!'],
+    puzzle: ['解けた!', 'פתרתם!'],
+    mission: ['やった!', 'משימה הושלמה!'],
+  };
+
+  const fmt = (n) => Math.round(n).toLocaleString();
+  function fmtTime(ms) {
+    const t = Math.max(0, ms);
+    return `${Math.floor(t / 60000)}:${String(Math.floor(t / 1000) % 60).padStart(2, '0')}.${Math.floor(t / 100) % 10}`;
+  }
+  function dateKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  function daysBetween(a, b) {
+    return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+  }
+  function dailySeed(key = dateKey()) {
+    let h = 2166136261;
+    for (const ch of key) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  const dailyGoal = () => DAILY_GOALS[dailySeed() % DAILY_GOALS.length];
+
+  // ---------------------------------------------------------------------------
+  // Saved progress (this browser)
+  // ---------------------------------------------------------------------------
+  const PROGRESS_KEY = 'wood-tetris-progress';
+  const P = {
+    lifeLines: 0, lifeTetris: 0, lifeTspin: 0, games: 0, missionsDone: 0,
+    best: { marathon: 0, zen: 0, sprint: 0 },
+    board: { marathon: [], sprint: [] },
+    daily: { date: '', best: 0, done: false },
+    puzzles: [],
+    streak: { last: '', count: 0, best: 0 },
+    missions: [],
+    skin: 'classic',
+    flower: 'sakura',
+    seenUnlocks: [],
+  };
+
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem(PROGRESS_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        for (const k of Object.keys(P)) {
+          if (!(k in d)) continue;
+          if (P[k] && typeof P[k] === 'object' && !Array.isArray(P[k])) Object.assign(P[k], d[k]);
+          else P[k] = d[k];
+        }
+      }
+      const old = parseInt(localStorage.getItem('wood-tetris-best') || '0', 10) || 0;
+      if (old > P.best.marathon) P.best.marathon = old;
+    } catch (e) { /* start fresh */ }
+    if (!SKINS.some((s) => s.id === P.skin && isUnlocked(s))) P.skin = 'classic';
+    if (!FLOWERS.some((f) => f.id === P.flower && isUnlocked(f))) P.flower = 'sakura';
+    fillMissions();
+  }
+
+  function saveProgress() {
+    try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(P)); } catch (e) { /* storage unavailable */ }
+  }
+
+  function touchStreak() {
+    const today = dateKey();
+    const s = P.streak;
+    if (s.last === today) return;
+    s.count = s.last && daysBetween(s.last, today) === 1 ? s.count + 1 : 1;
+    s.last = today;
+    s.best = Math.max(s.best, s.count);
+  }
+  function activeStreak() {
+    const s = P.streak;
+    return s.last && daysBetween(s.last, dateKey()) <= 1 ? s.count : 0;
+  }
+
+  function addLocal(kind, value) {
+    const list = P.board[kind];
+    list.push({ v: value, d: dateKey() });
+    list.sort((a, b) => (kind === 'sprint' ? a.v - b.v : b.v - a.v));
+    list.length = Math.min(list.length, 10);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Toasts, haptics, mascot
+  // ---------------------------------------------------------------------------
+  function toast(title, text) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    const b = document.createElement('b');
+    b.textContent = title;
+    const s = document.createElement('span');
+    s.textContent = text;
+    el.append(b, s);
+    toasts.appendChild(el);
+    setTimeout(() => el.remove(), 3400);
+  }
+
+  function haptic(pattern) {
+    if (Sound.muted) return;
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* not supported */ }
+  }
+
+  const Mascot = {
+    ctx: mascotCanvas.getContext('2d'),
+    expr: 'idle',
+    base: 'idle',
+    until: 0,
+    timer: null,
+    set(expr, ms = 1800) {
+      this.expr = expr;
+      this.until = performance.now() + ms;
+    },
+    setBase(expr) { this.base = expr; },
+    say(jp, he, expr, ms = 2000) {
+      if (expr) this.set(expr, ms);
+      bubbleJp.textContent = jp;
+      bubbleHe.textContent = he;
+      bubble.classList.remove('hidden', 'pop');
+      void bubble.offsetWidth;
+      bubble.classList.add('pop');
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => bubble.classList.add('hidden'), ms + 400);
+    },
+    render(now) {
+      if (now > this.until) this.expr = this.base;
+      let e = this.expr;
+      if (e === 'idle' && now % 3600 < 150) e = 'blink';
+      drawMascot(this.ctx, mascotCanvas.width, e, now / 1000);
+    },
+  };
+  function react(key, expr) {
+    const [jp, he] = SAYINGS[key];
+    Mascot.say(jp, he, expr);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Missions and unlocks
+  // ---------------------------------------------------------------------------
+  const missionDef = (id) => MISSION_POOL.find((t) => t.id === id);
+  const gameNews = [];
+  let knownUnlocks = new Set();
+
+  function fillMissions(exclude = []) {
+    P.missions = P.missions.filter((m) => missionDef(m.id));
+    while (P.missions.length < 3) {
+      const options = MISSION_POOL.filter((t) => !P.missions.some((m) => m.id === t.id) && !exclude.includes(t.id));
+      const t = options[Math.floor(Math.random() * options.length)];
+      P.missions.push({ id: t.id, progress: 0 });
+    }
+  }
+
+  function track(key, value = 1) {
+    let changed = false;
+    const finished = [];
+    for (const m of P.missions) {
+      const def = missionDef(m.id);
+      if (def.key !== key) continue;
+      const before = m.progress;
+      m.progress = def.max ? Math.max(m.progress, value) : m.progress + value;
+      if (m.progress !== before) changed = true;
+      if (m.progress >= def.target) finished.push(m);
+    }
+    if (finished.length) {
+      for (const m of finished) {
+        const def = missionDef(m.id);
+        P.missionsDone++;
+        toast('🎯 משימה הושלמה', def.text);
+        gameNews.push('🎯 ' + def.text);
+      }
+      Sound.mission();
+      haptic([20, 40, 20]);
+      react('mission', 'excited');
+      P.missions = P.missions.filter((m) => !finished.includes(m));
+      fillMissions(finished.map((m) => m.id));
+      checkUnlocks();
+    }
+    if (changed) saveProgress();
+  }
+
+  function checkUnlocks() {
+    for (const item of [...SKINS, ...FLOWERS]) {
+      if (!isUnlocked(item) || knownUnlocks.has(item.id)) continue;
+      knownUnlocks.add(item.id);
+      toast('🎁 נפתח באוסף', item.name);
+      gameNews.push('🎁 נפתח באוסף: ' + item.name);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared leaderboard (only when the page runs inside claude.ai with `db`)
+  // ---------------------------------------------------------------------------
+  const Cloud = { ready: false, readOnly: false, db: null, user: null, uid: null, mine: {}, downloads: null };
+
+  async function initCloud() {
+    const c = window.claude;
+    if (!c || typeof c.use !== 'function') return;
+    c.use('downloads').then((d) => { Cloud.downloads = d; }).catch(() => {});
+    try {
+      const [db, user] = await Promise.all([c.use('db'), c.use('user')]);
+      if (!db || !user) return;
+      const uid = await user.id();
+      if (!uid) return;
+      Cloud.db = db;
+      Cloud.user = user;
+      Cloud.uid = uid;
+      const snap = await db.doc('scores/' + uid).get();
+      Cloud.mine = snap.exists ? { ...snap.data() } : {};
+      Cloud.ready = true;
+      if (currentPanel === 'leaders') renderLeaders();
+    } catch (e) { Cloud.ready = false; }
+  }
+
+  async function cloudSubmit(fields) {
+    if (!Cloud.ready || Cloud.readOnly) return;
+    const mine = Cloud.mine;
+    const next = { ...mine };
+    let changed = false;
+    if (fields.marathon && fields.marathon > (mine.marathon || 0)) { next.marathon = fields.marathon; changed = true; }
+    if (fields.sprint && (!mine.sprint || fields.sprint < mine.sprint)) { next.sprint = fields.sprint; changed = true; }
+    if (fields.dailyDate && (mine.dailyDate !== fields.dailyDate || fields.dailyScore > (mine.dailyScore || 0))) {
+      next.dailyDate = fields.dailyDate;
+      next.dailyScore = fields.dailyScore;
+      changed = true;
+    }
+    if (!changed) return;
+    next.at = Date.now();
+    try {
+      await Cloud.db.doc('scores/' + Cloud.uid).set(next);
+      Cloud.mine = next;
+    } catch (e) {
+      if (e && e.code === 'invalid_argument') Cloud.readOnly = true;
+    }
+  }
+
+  async function cloudTop(kind) {
+    const col = Cloud.db.collection('scores');
+    let q;
+    if (kind === 'marathon') q = col.where('marathon', '>', 0).orderBy('marathon', 'desc').limit(10);
+    else if (kind === 'sprint') q = col.where('sprint', '>', 0).orderBy('sprint', 'asc').limit(10);
+    else q = col.where('dailyDate', '==', dateKey()).orderBy('dailyScore', 'desc').limit(10);
+    const snap = await q.get();
+    const ids = snap.docs.map((d) => d.id);
+    const profiles = ids.length ? await Cloud.user.profiles(ids) : {};
+    return snap.docs.map((d) => {
+      const v = d.data();
+      return {
+        name: (profiles[d.id] && profiles[d.id].name) || 'שחקן',
+        value: kind === 'marathon' ? v.marathon : kind === 'sprint' ? v.sprint : v.dailyScore,
+        me: d.id === Cloud.uid,
+      };
+    });
+  }
+
+  function localTop(kind) {
+    if (kind === 'daily') return P.daily.date === dateKey() && P.daily.best ? [{ name: 'אני', value: P.daily.best, me: true }] : [];
+    return P.board[kind].map((r) => ({ name: 'אני · ' + r.d.slice(5).split('-').reverse().join('.'), value: r.v, me: true }));
+  }
+
+  // ---------------------------------------------------------------------------
   // Game state
   // ---------------------------------------------------------------------------
   let grid, bag, queue, cur, holdType, canHold;
   let score = 0, lines = 0, level = 1, combo = -1;
-  let best = 0;
   let state = 'menu'; // menu | play | pause | clearing | over
+  let mode = 'marathon';
+  let puzzleIndex = 0;
+  let rng = Math.random;
+  let playTime = 0;
+  let gs = { lines: 0, tetris: 0, tspin: 0, comboMax: 0, perfect: 0 };
+  let lastResult = null;
   let dropAcc = 0, lockTimer = 0, lockResets = 0;
   let clearingRows = [], clearTimer = 0;
   const held = { left: false, right: false, down: false };
   let dasDir = 0, dasTimer = 0, arrTimer = 0;
   let b2b = false, lastRotate = false;
   let levelTimer = 0, linesInLevel = 0;
-
-  try { best = parseInt(localStorage.getItem('wood-tetris-best') || '0', 10) || 0; } catch (e) { best = 0; }
+  let fever = 0;   // ms of fever left
+  let danger = false;
+  let dailyNotified = false;
+  const FEVER_MS = 12000;
 
   function emptyGrid() {
     return Array.from({ length: TOTAL }, () => Array(COLS).fill(null));
@@ -1300,7 +2269,7 @@
     if (!bag.length) {
       bag = TYPES.slice();
       for (let i = bag.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rng() * (i + 1));
         [bag[i], bag[j]] = [bag[j], bag[i]];
       }
     }
@@ -1393,11 +2362,11 @@
   }
 
   function doHold() {
-    if (state !== 'play' || !cur || !canHold) return;
+    if (state !== 'play' || !cur || !canHold || mode === 'puzzle') return;
     const t = cur.type;
     if (holdType) {
       cur = makePiece(holdType);
-      if (collide(cur.m, cur.x, cur.y)) { gameOver(); return; }
+      if (collide(cur.m, cur.x, cur.y)) { topOut(); return; }
     } else {
       spawnNext();
     }
@@ -1409,16 +2378,38 @@
   }
 
   function spawnNext() {
-    cur = makePiece(queue.shift());
-    queue.push(nextFromBag());
-    canHold = true;
+    if (mode === 'puzzle') {
+      if (lines >= PUZZLES[puzzleIndex].goal) { endGame('puzzle-win'); return; }
+      if (!queue.length) { endGame('puzzle-fail'); return; }
+      cur = makePiece(queue.shift());
+    } else {
+      cur = makePiece(queue.shift());
+      queue.push(nextFromBag());
+    }
+    canHold = mode !== 'puzzle';
     lockTimer = 0;
     lockResets = 0;
     dropAcc = 0;
     if (collide(cur.m, cur.x, cur.y)) {
       cur.y--;
-      if (collide(cur.m, cur.x, cur.y)) gameOver();
+      if (collide(cur.m, cur.x, cur.y)) { topOut(); return; }
     }
+    checkDanger();
+    updateModeHud();
+  }
+
+  // Zen never ends: a full board blooms away and play goes on
+  function topOut() {
+    if (mode !== 'zen') { endGame('topout'); return; }
+    const rows = [];
+    for (let y = HIDDEN; y < TOTAL; y++) if (grid[y].some(Boolean)) rows.push(y);
+    burstRows(rows.slice(-6), true, 0.6);
+    grid = emptyGrid();
+    popup('禅', 'הלוח התנקה, ממשיכים בשקט', 'level', 45);
+    Sound.relief();
+    cur = makePiece(queue.shift());
+    queue.push(nextFromBag());
+    checkDanger();
   }
 
   function gravityMs() {
@@ -1434,6 +2425,12 @@
     speedBar.classList.remove('flash');
     void speedBar.offsetWidth;
     speedBar.classList.add('flash');
+    track('level', level);
+    react('speed', 'excited');
+    if (MODES[mode].seasons) {
+      const s = Math.floor((level - 1) / 3) % 4;
+      if (s !== season) setTimeout(() => setSeason(s, true), 1400);
+    }
     updateUI();
   }
 
@@ -1459,6 +2456,58 @@
     }
   }
 
+  // ---- fever: a big combo doubles the score for a few seconds
+  function startFever() {
+    if (fever > 0) { fever = Math.min(fever + 4000, 15000); return; }
+    fever = FEVER_MS;
+    Music.fever = true;
+    frame.classList.add('fever');
+    feverBadge.classList.remove('hidden');
+    Sound.feverStart();
+    haptic([30, 30, 30, 30, 80]);
+    setTimeout(() => popup('フィーバー!', ['מצב פיבר!', `ניקוד ${ltr('×2')}`], 'level fever', 30), 300);
+    react('fever', 'excited');
+    track('fever', 1);
+  }
+
+  function endFever() {
+    fever = 0;
+    Music.fever = false;
+    frame.classList.remove('fever');
+    feverBadge.classList.add('hidden');
+  }
+
+  // ---- danger: the stack is close to the top
+  function stackTop() {
+    for (let y = HIDDEN; y < TOTAL; y++) if (grid[y].some(Boolean)) return y - HIDDEN;
+    return ROWS;
+  }
+
+  function checkDanger() {
+    const now = state === 'play' && !!grid && stackTop() < 6;
+    if (now === danger) return;
+    danger = now;
+    frame.classList.toggle('danger', danger);
+    Music.tension = danger;
+    if (danger) {
+      Sound.dangerEnter();
+      haptic([60, 40, 60]);
+      Mascot.setBase('scared');
+      react('danger', 'scared');
+    } else {
+      Mascot.setBase('idle');
+      Sound.relief();
+      react('relief', 'happy');
+    }
+  }
+
+  function clearDanger() {
+    danger = false;
+    frame.classList.remove('danger');
+    Music.tension = false;
+    Mascot.setBase('idle');
+  }
+
   function lockPiece(silent) {
     const tspin = isTSpin();
     const rect = boardRect();
@@ -1475,9 +2524,10 @@
       }
     }
     if (!silent) Sound.tok(1);
+    haptic(10);
     cur = null;
     lastRotate = false;
-    if (allHidden) { gameOver(); return; }
+    if (allHidden) { topOut(); return; }
 
     const full = [];
     for (let y = 0; y < TOTAL; y++) if (grid[y].every(Boolean)) full.push(y);
@@ -1494,6 +2544,11 @@
       tags.push(TSPIN_LABELS[n]);
       Sound.tspin();
       spinBurst(spinX, spinY);
+      gs.tspin++;
+      P.lifeTspin++;
+      track('tspin', 1);
+      haptic([15, 20, 40]);
+      react('tspin', 'excited');
     }
 
     if (n) {
@@ -1510,12 +2565,16 @@
         jp = '連続' + jp;
         tags.push(`ברצף! ${ltr('×1.5')}`);
         Sound.backToBack();
+        track('b2b', 1);
+        react('b2b', 'excited');
       }
       b2b = difficult;
       if (combo > 0) {
         pts += 50 * combo * level;
         tags.push(`קומבו ${ltr('×' + (combo + 1))}!`);
         Sound.combo(combo);
+        haptic([20, 30, 20]);
+        if (combo >= 2 && !tspin) react('combo', 'happy');
       }
       const set = new Set(full);
       perfect = grid.every((row, y) => set.has(y) || row.every((cell) => !cell));
@@ -1524,10 +2583,31 @@
         jp = '完璧!';
         tags.unshift('לוח נקי!');
         Sound.perfect();
+        gs.perfect++;
+        haptic([50, 50, 50, 50, 120]);
+        react('perfect', 'excited');
       }
+      if (n === 4) {
+        gs.tetris++;
+        P.lifeTetris++;
+        track('tetris', 1);
+        haptic([30, 40, 60]);
+        if (!perfect && !b2b) react('tetris', 'excited');
+      } else {
+        haptic(25 + n * 10);
+      }
+      if (fever > 0) {
+        pts *= 2;
+        tags.push(`פיבר ${ltr('×2')}`);
+        fever = Math.min(fever + 3000, 15000);
+      }
+      gs.comboMax = Math.max(gs.comboMax, combo + 1);
+      track('comboMax', combo + 1);
 
       lines += n;
-      linesInLevel += n;
+      gs.lines += n;
+      P.lifeLines += n;
+      track('lines', n);
       clearingRows = full;
       clearTimer = 0;
       state = 'clearing';
@@ -1539,16 +2619,21 @@
         void frame.offsetWidth;
         frame.classList.add('shake');
       }
-      while (linesInLevel >= LINES_PER_LEVEL) {
-        linesInLevel -= LINES_PER_LEVEL;
-        levelUp();
+      if (MODES[mode].levels) {
+        linesInLevel += n;
+        while (linesInLevel >= LINES_PER_LEVEL) {
+          linesInLevel -= LINES_PER_LEVEL;
+          levelUp();
+        }
       }
+      if (combo >= 4 || perfect) startFever();
     } else {
       combo = -1;
       spawnNext();
     }
 
     score += pts;
+    if (pts) track('gameScore', score);
     if (jp) {
       tags.push(ltr('+' + pts.toLocaleString()));
       const cls = (n === 4 || perfect) ? 'big' : (tspin ? 'spin' : '');
@@ -1556,6 +2641,7 @@
     }
     updateComboBadge();
     updateUI();
+    updateModeHud();
   }
 
   function finishClear() {
@@ -1564,69 +2650,248 @@
     while (grid.length < TOTAL) grid.unshift(Array(COLS).fill(null));
     clearingRows = [];
     state = 'play';
+    if (mode === 'sprint' && lines >= MODES.sprint.goalLines) { endGame('sprint-done'); return; }
     spawnNext();
+  }
+
+  // ---------------------------------------------------------------------------
+  // HUD
+  // ---------------------------------------------------------------------------
+  function dailyProgress(g) {
+    return g.key === 'score' ? score : gs[g.key] || 0;
+  }
+
+  function modeBest() {
+    if (mode === 'sprint') return P.best.sprint ? fmtTime(P.best.sprint) : '—';
+    if (mode === 'daily') return fmt(Math.max(score, P.daily.date === dateKey() ? P.daily.best : 0));
+    if (mode === 'puzzle') return `${P.puzzles.length}/${PUZZLES.length}`;
+    return fmt(Math.max(score, P.best[mode] || 0));
+  }
+
+  function levelValue() {
+    if (mode === 'sprint') return fmtTime(playTime);
+    if (mode === 'daily') return fmtTime(MODES.daily.timeLimit - playTime);
+    if (mode === 'puzzle') return String(puzzleIndex + 1);
+    return String(level);
   }
 
   function updateUI() {
-    if (score > best) {
-      best = score;
-      try { localStorage.setItem('wood-tetris-best', String(best)); } catch (e) { /* ignore */ }
-    }
-    ui.score.textContent = score.toLocaleString();
-    ui.best.textContent = best.toLocaleString();
-    ui.level.textContent = level;
+    ui.score.textContent = fmt(score);
+    ui.best.textContent = modeBest();
+    ui.level.textContent = levelValue();
     ui.lines.textContent = lines;
   }
 
-  function newGame() {
-    grid = emptyGrid();
-    bag = [];
-    queue = [nextFromBag(), nextFromBag(), nextFromBag()];
-    holdType = null;
-    score = 0; lines = 0; level = 1; combo = -1;
-    b2b = false; lastRotate = false;
-    levelTimer = 0; linesInLevel = 0;
-    clearingRows = [];
-    updateComboBadge();
-    state = 'play';
-    spawnNext();
-    updateUI();
-    overlay.classList.add('hidden');
-    Music.setLevel(1);
-    Music.play(true);
+  function updateModeHud() {
+    let t = '';
+    if (mode === 'sprint') {
+      t = `🏁 ${ltr(Math.min(lines, 40) + '/40')} שורות`;
+    } else if (mode === 'daily') {
+      const g = dailyGoal();
+      const p = Math.min(dailyProgress(g), g.target);
+      t = `🎯 ${g.text} ${ltr(p + '/' + g.target)}${p >= g.target ? ' ✓' : ''}`;
+      if (p >= g.target && !dailyNotified && state !== 'menu') {
+        dailyNotified = true;
+        toast('🎯 המטרה היומית הושלמה!', g.text);
+        Sound.mission();
+      }
+    } else if (mode === 'puzzle') {
+      const pz = PUZZLES[puzzleIndex];
+      const left = queue.length + (cur ? 1 : 0);
+      t = `🧩 ${ltr(Math.min(lines, pz.goal) + '/' + pz.goal)} שורות · ${left} ${left === 1 ? 'חלק' : 'חלקים'}`;
+    } else if (mode === 'zen') {
+      t = '禅 זן';
+    }
+    modeHud.textContent = t;
+    modeHud.classList.toggle('hidden', !t || state === 'menu');
   }
 
-  function gameOver() {
+  // ---------------------------------------------------------------------------
+  // Game flow
+  // ---------------------------------------------------------------------------
+  function newGame(m = mode, opt = {}) {
+    Sound.init();
+    if (Sound.ctx && Sound.ctx.state === 'suspended') Sound.ctx.resume();
+    mode = m;
+    const M = MODES[mode];
+    rng = M.seeded ? mulberry32(dailySeed()) : Math.random;
+    grid = emptyGrid();
+    bag = [];
+    holdType = null;
+    canHold = true;
+    score = 0; lines = 0; level = 1; combo = -1;
+    b2b = false; lastRotate = false;
+    levelTimer = 0; linesInLevel = 0; playTime = 0;
+    gs = { lines: 0, tetris: 0, tspin: 0, comboMax: 0, perfect: 0 };
+    dailyNotified = false;
+    gameNews.length = 0;
+    clearingRows = [];
+    endFever();
+    clearDanger();
+    if (M.puzzle) {
+      if (opt.puzzle !== undefined) puzzleIndex = opt.puzzle;
+      const pz = PUZZLES[puzzleIndex];
+      pz.rows.forEach((row, i) => {
+        const y = TOTAL - pz.rows.length + i;
+        [...row].forEach((ch, x) => {
+          if (ch === '#') grid[y][x] = { t: TYPES[(x * 3 + y) % TYPES.length], v: (x + y) % VARIANTS };
+        });
+      });
+      queue = pz.pieces.slice();
+    } else {
+      queue = [nextFromBag(), nextFromBag(), nextFromBag()];
+    }
+    frame.classList.toggle('no-speed', !M.levels);
+    levelLabel.textContent = mode === 'sprint' ? 'זמן' : mode === 'daily' ? 'נשאר' : mode === 'puzzle' ? 'חידה' : 'שלב';
+    setSeason(0, false);
+    touchStreak();
+    P.games++;
+    saveProgress();
+    state = 'play';
+    hideOverlay();
+    updateComboBadge();
+    spawnNext();
+    updateUI();
+    updateModeHud();
+    Music.setLevel(1);
+    Music.play(true);
+    react('start', 'happy');
+    if (M.puzzle && PUZZLES[puzzleIndex].hint) toast('💡 רמז', PUZZLES[puzzleIndex].hint);
+  }
+
+  function endGame(reason) {
+    if (state === 'over') return;
     state = 'over';
     cur = null;
     Music.stop();
+    endFever();
+    clearDanger();
+    updateComboBadge();
+
+    let title = 'המשחק נגמר';
+    let big = '終';
+    let record = false;
+    const stats = [['ניקוד', fmt(score)], ['שורות', String(lines)]];
+
+    if (mode === 'marathon' || mode === 'zen') {
+      if (score > (P.best[mode] || 0)) { record = score > 0; P.best[mode] = score; }
+      stats.push(['שלב', String(level)]);
+    }
+    if (mode === 'marathon') {
+      addLocal('marathon', score);
+      cloudSubmit({ marathon: score });
+    }
+    if (reason === 'sprint-done') {
+      title = 'ספרינט הושלם!';
+      big = '速';
+      const t = Math.round(playTime);
+      if (!P.best.sprint || t < P.best.sprint) { record = true; P.best.sprint = t; }
+      addLocal('sprint', t);
+      cloudSubmit({ sprint: t });
+      track('sprint', 1);
+      stats.unshift(['זמן', fmtTime(t)]);
+    }
+    if (mode === 'daily') {
+      title = reason === 'time-up' ? 'הזמן נגמר!' : 'המשחק נגמר';
+      big = '今';
+      const today = dateKey();
+      if (P.daily.date !== today) P.daily = { date: today, best: 0, done: false };
+      if (score > P.daily.best) { record = P.daily.best > 0; P.daily.best = score; }
+      const g = dailyGoal();
+      const done = dailyProgress(g) >= g.target;
+      if (done) P.daily.done = true;
+      stats.push(['מטרה', `${g.text} ${done ? '✓' : '✗'}`]);
+      cloudSubmit({ dailyDate: today, dailyScore: P.daily.best });
+      track('daily', 1);
+    }
+    if (reason === 'puzzle-win') {
+      title = 'החידה נפתרה!';
+      big = '解';
+      if (!P.puzzles.includes(puzzleIndex)) P.puzzles.push(puzzleIndex);
+      track('puzzle', 1);
+    }
+    if (reason === 'puzzle-fail') {
+      title = 'לא הפעם';
+      big = '惜';
+    }
+    if (gs.tetris) stats.push(['טטריסים', String(gs.tetris)]);
+    if (gs.comboMax > 1) stats.push(['קומבו מרבי', '×' + gs.comboMax]);
+
+    checkUnlocks();
+    saveProgress();
+
+    const won = reason === 'puzzle-win' || reason === 'sprint-done';
+    if (won) { Sound.clear(4); Sound.mission(); }
+    else if (reason === 'time-up') Sound.relief();
+    else { Sound.gameOver(); haptic(250); }
+    if (record) react('record', 'excited');
+    else if (reason === 'puzzle-win') react('puzzle', 'excited');
+    else if (!won) react('over', 'sad');
+
+    lastResult = { mode, reason, score, lines, level, time: playTime, record, puzzle: puzzleIndex };
+
+    overJp.textContent = big;
+    overTitle.textContent = title;
+    overRecord.classList.toggle('hidden', !record);
+    overStats.textContent = '';
+    for (const [k, v] of stats) {
+      const dt = document.createElement('dt');
+      dt.textContent = k;
+      const dd = document.createElement('dd');
+      dd.textContent = v;
+      overStats.append(dt, dd);
+    }
+    overNews.textContent = '';
+    for (const line of gameNews) {
+      const li = document.createElement('li');
+      li.textContent = line;
+      overNews.appendChild(li);
+    }
+    againBtn.textContent = reason === 'puzzle-win' && puzzleIndex < PUZZLES.length - 1 ? 'לחידה הבאה'
+      : reason === 'puzzle-fail' ? 'נסו שוב' : 'שוב';
+    showPanel('over');
+    drawGardenBg();
+  }
+
+  function playAgain() {
+    if (lastResult && lastResult.reason === 'puzzle-win' && puzzleIndex < PUZZLES.length - 1) newGame('puzzle', { puzzle: puzzleIndex + 1 });
+    else newGame(mode);
+  }
+
+  function quitToMenu() {
+    state = 'menu';
+    cur = null;
+    grid = null;
+    score = 0; lines = 0; combo = -1;
+    Music.stop();
+    endFever();
+    clearDanger();
+    updateComboBadge();
+    updateModeHud();
     updateUI();
-    overlayTitle.textContent = 'המשחק נגמר';
-    overlayText.textContent = `ניקוד: ${score.toLocaleString()} · שורות: ${lines}`;
-    startBtn.textContent = 'שחק שוב';
-    overlay.classList.remove('hidden');
+    saveProgress();
   }
 
   function togglePause() {
     if (state === 'play') {
       state = 'pause';
-      overlayTitle.textContent = 'הפסקה';
-      overlayText.textContent = 'תה ירוק וממשיכים 🍵';
-      startBtn.textContent = 'המשך';
-      overlay.classList.remove('hidden');
       Music.stop();
+      saveProgress();
+      showPanel('pause');
     } else if (state === 'pause') {
       state = 'play';
-      overlay.classList.add('hidden');
+      hideOverlay();
       Music.play(false);
     }
   }
 
+  // Enter, the tutorial's last button and "play" all land here
   function start() {
     Sound.init();
     if (Sound.ctx && Sound.ctx.state === 'suspended') Sound.ctx.resume();
     if (state === 'pause') togglePause();
-    else newGame();
+    else if (state === 'over') playAgain();
+    else if (state === 'menu') newGame('marathon');
   }
 
   // ---------------------------------------------------------------------------
@@ -1640,10 +2905,23 @@
     }
     if (state !== 'play' || !cur) return;
 
-    levelTimer += dt;
-    if (levelTimer >= LEVEL_MS) {
-      linesInLevel = 0;
-      levelUp();
+    const M = MODES[mode];
+    playTime += dt;
+    if (M.timeLimit && playTime >= M.timeLimit) { endGame('time-up'); return; }
+    if (M.levels) {
+      levelTimer += dt;
+      if (levelTimer >= LEVEL_MS) {
+        linesInLevel = 0;
+        levelUp();
+      }
+    }
+    if (M.zen) {
+      const s = Math.floor(playTime / 90000) % 4;
+      if (s !== season) setSeason(s, true);
+    }
+    if (fever > 0) {
+      fever -= dt;
+      if (fever <= 0) endFever();
     }
 
     // auto-shift
@@ -1684,26 +2962,49 @@
     ctx.globalAlpha = 1;
   }
 
-  function renderBoard() {
+  function renderBoard(now) {
     const ctx = bctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.drawImage(boardBg, 0, 0, COLS * CELL, ROWS * CELL);
     if (!grid) return;
 
+    if (fever > 0) {
+      const g = ctx.createLinearGradient(0, 0, 0, ROWS * CELL);
+      const a = 0.1 + 0.06 * Math.sin(now / 180);
+      g.addColorStop(0, `rgba(255,120,170,${a * 1.6})`);
+      g.addColorStop(1, `rgba(255,170,90,${a})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, COLS * CELL, ROWS * CELL);
+    }
+
     const clearSet = new Set(clearingRows);
     const p = state === 'clearing' ? clamp(clearTimer / CLEAR_MS, 0, 1) : 0;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 220);
 
     for (let y = HIDDEN; y < TOTAL; y++) {
       const py = (y - HIDDEN) * CELL;
+      let filled = 0, gap = -1;
       for (let x = 0; x < COLS; x++) {
         const cell = grid[y][x];
-        if (!cell) continue;
+        if (!cell) { gap = x; continue; }
+        filled++;
         if (clearSet.has(y)) {
           const s = CELL * (1 - p * p);
           drawCell(ctx, cell.t, cell.v, x * CELL + (CELL - s) / 2, py + (CELL - s) / 2, s, 1 - p * 0.6);
         } else {
           drawCell(ctx, cell.t, cell.v, x * CELL, py, CELL);
         }
+      }
+      // "almost!": one cell missing, so the gap glows
+      if (filled === COLS - 1 && !clearSet.has(y)) {
+        ctx.fillStyle = `rgba(255,190,215,${0.05 + 0.05 * pulse})`;
+        ctx.fillRect(0, py, COLS * CELL, CELL);
+        ctx.fillStyle = `rgba(255,170,205,${0.12 + 0.18 * pulse})`;
+        roundRectPath(ctx, gap * CELL + 3, py + 3, CELL - 6, CELL - 6, 6);
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = `rgba(255,215,232,${0.5 + 0.4 * pulse})`;
+        ctx.stroke();
       }
       if (clearSet.has(y)) {
         const a = Math.sin(p * Math.PI);
@@ -1760,15 +3061,15 @@
     const hw = holdCanvas.width / dpr, hh = holdCanvas.height / dpr;
     hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     hctx.clearRect(0, 0, hw, hh);
-    if (holdType) drawMini(hctx, holdType, hw / 2, hh / 2, Math.min(hw / 5, hh / 3), canHold ? 1 : 0.4);
+    if (holdType && state !== 'menu') drawMini(hctx, holdType, hw / 2, hh / 2, Math.min(hw / 5, hh / 3), canHold ? 1 : 0.4);
 
     const nw = nextCanvas.width / dpr, nh = nextCanvas.height / dpr;
     nctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     nctx.clearRect(0, 0, nw, nh);
-    if (!queue) return;
+    if (!queue || state === 'menu') return;
     const count = nh > nw * 1.4 ? 3 : 1;
     const slot = nh / count;
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count && queue[i]; i++) {
       const size = Math.min(nw / 5, slot / 3) * (i === 0 ? 1 : 0.82);
       drawMini(nctx, queue[i], nw / 2, slot * i + slot / 2, size, i === 0 ? 1 : 0.85);
     }
@@ -1782,6 +3083,19 @@
     speedFill.style.transform = `scaleX(${p.toFixed(3)})`;
   }
 
+  let shownFever = -1, shownTime = '';
+  function renderHud() {
+    const sec = fever > 0 ? Math.ceil(fever / 1000) : 0;
+    if (sec !== shownFever) {
+      shownFever = sec;
+      feverBadge.textContent = sec ? `🔥 פיבר ${ltr('×2')} · ${sec}` : '';
+    }
+    if (state === 'play' && (mode === 'sprint' || mode === 'daily')) {
+      const t = levelValue();
+      if (t !== shownTime) { shownTime = t; ui.level.textContent = t; }
+    }
+  }
+
   let last = performance.now();
   function loop(now) {
     const dtMs = Math.min(50, now - last);
@@ -1789,12 +3103,347 @@
     update(dtMs);
     updateParts(dtMs / 1000);
     updateAmbient(dtMs / 1000);
-    renderBoard();
+    if (fever > 0 && !reduceMotion && Math.random() < 0.18) {
+      addPetal(rand(0, vw), -10, { vx: rand(-30, 30), vy: rand(40, 120), life: 4 });
+    }
+    renderBoard(now);
     renderSide();
     renderEffects();
     renderSpeedBar();
+    renderHud();
+    Mascot.render(now);
     requestAnimationFrame(loop);
   }
+
+  // ---------------------------------------------------------------------------
+  // Menu panels
+  // ---------------------------------------------------------------------------
+  const panels = [...overlay.querySelectorAll('.panel')];
+  let currentPanel = 'menu';
+  let boardKind = 'marathon';
+
+  function showPanel(name) {
+    currentPanel = name;
+    overlay.classList.remove('hidden');
+    panels.forEach((p) => { p.hidden = p.dataset.panel !== name; });
+    sign.scrollTop = 0;
+    const render = { menu: renderMenu, puzzles: renderPuzzles, missions: renderMissions, garden: renderGarden, collection: renderCollection, leaders: renderLeaders, share: renderShare }[name];
+    if (render) render();
+  }
+
+  function hideOverlay() {
+    overlay.classList.add('hidden');
+  }
+
+  function renderMenu() {
+    const n = activeStreak();
+    streakLine.textContent = '';
+    const label = document.createElement('span');
+    label.textContent = n ? `🔥 ${n} ${n === 1 ? 'יום' : 'ימים'} ברצף` : 'שחקו היום כדי להתחיל רצף 🔥';
+    const flowers = document.createElement('span');
+    flowers.className = 'streak-flowers';
+    const filled = n ? ((n - 1) % 7) + 1 : 0;
+    for (let i = 0; i < 7; i++) {
+      const f = document.createElement('i');
+      f.textContent = i < filled ? '🌸' : '·';
+      flowers.appendChild(f);
+    }
+    streakLine.append(label, flowers);
+
+    $('mode-sub-marathon').textContent = P.best.marathon ? `שיא: ${fmt(P.best.marathon)}` : 'אינסופי, המהירות עולה';
+    const g = dailyGoal();
+    const doneToday = P.daily.date === dateKey() && P.daily.done;
+    $('mode-sub-daily').textContent = `${g.text} · 3 דקות${doneToday ? ' ✓' : ''}`;
+    $('mode-sub-sprint').textContent = P.best.sprint ? `שיא: ${fmtTime(P.best.sprint)}` : '40 שורות, כמה שיותר מהר';
+    $('mode-sub-puzzle').textContent = `${P.puzzles.length}/${PUZZLES.length} נפתרו`;
+    collectionDot.classList.toggle('hidden', ![...SKINS, ...FLOWERS].some((i) => isUnlocked(i) && i.prog && !P.seenUnlocks.includes(i.id)));
+  }
+
+  function renderPuzzles() {
+    puzzleGrid.textContent = '';
+    PUZZLES.forEach((pz, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'puzzle-btn' + (P.puzzles.includes(i) ? ' solved' : '');
+      const num = document.createElement('b');
+      num.textContent = P.puzzles.includes(i) ? '✓' : String(i + 1);
+      const name = document.createElement('span');
+      name.textContent = pz.name;
+      b.append(num, name);
+      b.addEventListener('click', () => newGame('puzzle', { puzzle: i }));
+      puzzleGrid.appendChild(b);
+    });
+  }
+
+  function renderMissions() {
+    missionList.textContent = '';
+    for (const m of P.missions) {
+      const def = missionDef(m.id);
+      const li = document.createElement('li');
+      const t = document.createElement('span');
+      t.textContent = def.text;
+      const bar = document.createElement('i');
+      bar.className = 'bar';
+      const fill = document.createElement('i');
+      fill.style.width = Math.min(100, (m.progress / def.target) * 100) + '%';
+      bar.appendChild(fill);
+      const n = document.createElement('small');
+      n.textContent = ltr(`${Math.min(m.progress, def.target)}/${def.target}`);
+      li.append(t, bar, n);
+      missionList.appendChild(li);
+    }
+    missionsTotal.textContent = `השלמתם ${P.missionsDone} משימות עד היום.`;
+  }
+
+  function renderGarden() {
+    const res = drawGarden(gardenCanvas, P.lifeLines);
+    gardenText.textContent = P.lifeLines
+      ? `נוקו ${fmt(P.lifeLines)} שורות עד היום, ויש ${fmt(res.flowers)} פרחים על העץ. כל שורה מוסיפה פריחה, והעץ גדל עד 400 שורות.`
+      : 'העץ עוד צעיר. כל שורה שתנקו תוסיף עליו פריחה.';
+  }
+
+  function drawGardenBg() {
+    if (!gardenBg.clientWidth) return;
+    gardenBg.width = Math.round(gardenBg.clientWidth * dpr);
+    gardenBg.height = Math.round(gardenBg.clientHeight * dpr);
+    drawGarden(gardenBg, P.lifeLines);
+  }
+
+  const previews = {};
+  function previewCanvas(kind, id) {
+    const key = kind + ':' + id;
+    if (previews[key]) return previews[key];
+    let c;
+    if (kind === 'skin') {
+      c = makeCanvas(96, 64);
+      const ctx = c.getContext('2d');
+      ['T', 'S', 'I'].forEach((t, i) => ctx.drawImage(woodTile(t, i % VARIANTS, id), 4 + i * 30, 17, 30, 30));
+    } else {
+      const pal = (FLOWER_PALETTES[id] || PALETTES)[0];
+      c = id === 'camellia' ? makeCamellia(pal) : id === 'kiku' ? makeKiku(pal) : makeBlossom(pal, 'sakura');
+    }
+    previews[key] = c;
+    return c;
+  }
+
+  function renderCollection() {
+    const build = (gridEl, items, kind, selected, choose) => {
+      gridEl.textContent = '';
+      for (const item of items) {
+        const open = isUnlocked(item);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'collect-item' + (item.id === selected ? ' on' : '') + (open ? '' : ' locked');
+        const img = document.createElement('img');
+        img.alt = '';
+        img.src = previewCanvas(kind, item.id).toDataURL();
+        const name = document.createElement('b');
+        name.textContent = open ? item.name : '🔒 ' + item.name;
+        b.append(img, name);
+        if (!open) {
+          const [v, t] = item.prog();
+          const need = document.createElement('small');
+          need.textContent = `${item.need} ${ltr(Math.min(v, t) + '/' + t)}`;
+          b.appendChild(need);
+          b.disabled = true;
+        }
+        b.addEventListener('click', () => { if (open) choose(item.id); });
+        gridEl.appendChild(b);
+      }
+    };
+    build(skinGrid, SKINS, 'skin', P.skin, (id) => {
+      P.skin = id;
+      buildTiles(id);
+      saveProgress();
+      renderCollection();
+    });
+    build(flowerGrid, FLOWERS, 'flower', P.flower, (id) => {
+      P.flower = id;
+      buildFlowers(id);
+      saveProgress();
+      renderCollection();
+      const r = sign.getBoundingClientRect();
+      for (let i = 0; i < 5; i++) addBlossom(r.left + rand(20, r.width - 20), r.top + r.height * 0.7, { delay: i * 0.05 });
+    });
+    P.seenUnlocks = [...SKINS, ...FLOWERS].filter(isUnlocked).map((i) => i.id);
+    saveProgress();
+  }
+
+  async function renderLeaders() {
+    [...boardTabs.children].forEach((b) => b.classList.toggle('on', b.dataset.board === boardKind));
+    const kind = boardKind;
+    let rows = null;
+    if (Cloud.ready) {
+      boardNote.textContent = 'טבלה משותפת לכל מי שמשחק מהקישור הזה.';
+      try { rows = await cloudTop(kind); } catch (e) { rows = null; }
+      if (kind !== boardKind || currentPanel !== 'leaders') return;
+    }
+    if (!rows) {
+      boardNote.textContent = 'השיאים שלך במכשיר הזה. כשמשחקים מהקישור המשותף מופיעה גם טבלה משותפת.';
+      rows = localTop(kind);
+    }
+    boardList.textContent = '';
+    if (!rows.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'עוד אין תוצאות כאן. שחקו כדי להופיע בטבלה!';
+      boardList.appendChild(li);
+      return;
+    }
+    rows.forEach((r, i) => {
+      const li = document.createElement('li');
+      if (r.me) li.className = 'me';
+      const rank = document.createElement('b');
+      rank.textContent = i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1);
+      const name = document.createElement('span');
+      name.textContent = r.name;
+      const val = document.createElement('em');
+      val.textContent = kind === 'sprint' ? fmtTime(r.value) : fmt(r.value);
+      li.append(rank, name, val);
+      boardList.appendChild(li);
+    });
+  }
+
+  // ---- share card
+  function shareText(r) {
+    if (r.reason === 'sprint-done') return `סיימתי ספרינט 40 בטטריס עץ ב-${fmtTime(r.time)} 🌸 תנצחו אותי!`;
+    if (r.mode === 'puzzle') return `פתרתי את חידה ${r.puzzle + 1} בטטריס עץ 🌸`;
+    return `השגתי ${fmt(r.score)} נקודות ב${MODES[r.mode].name} של טטריס עץ (${r.lines} שורות) 🌸 תנצחו אותי!`;
+  }
+
+  function makeShareCard(r) {
+    const W = 720, H = 960;
+    const c = makeCanvas(W, H);
+    const ctx = c.getContext('2d');
+    ctx.drawImage(woodCanvas(180, 240, { light: [232, 196, 146], dark: [184, 136, 84], seed: 5, ringFreq: 0.08, warp: 7 }), 0, 0, W, H);
+    ctx.fillStyle = 'rgba(40,22,12,.9)';
+    roundRectPath(ctx, 36, 36, W - 72, H - 72, 30);
+    ctx.fill();
+    const rr = mulberry32(r.score + 7);
+    for (let i = 0; i < 16; i++) {
+      const s = 50 + rr() * 70;
+      const edge = i % 4;
+      const x = edge < 2 ? (edge === 0 ? 30 : W - 30) + (rr() - 0.5) * 80 : rr() * W;
+      const y = edge >= 2 ? (edge === 2 ? 40 : H - 40) + (rr() - 0.5) * 60 : rr() * H;
+      ctx.drawImage(blossoms[Math.floor(rr() * blossoms.length)], x - s / 2, y - s / 2, s, s);
+    }
+    const m = makeCanvas(240, 240);
+    drawMascot(m.getContext('2d'), 240, r.record || r.reason === 'puzzle-win' || r.reason === 'sprint-done' ? 'excited' : 'happy', 0.4);
+    ctx.drawImage(m, W / 2 - 120, 520);
+    ctx.textAlign = 'center';
+    ctx.direction = 'rtl';
+    ctx.fillStyle = '#ffb7cf';
+    ctx.font = '44px "Yusei Magic", sans-serif';
+    ctx.fillText('木のテトリス', W / 2, 140);
+    ctx.fillStyle = '#fff';
+    ctx.font = '800 66px Rubik, sans-serif';
+    ctx.fillText('טטריס עץ', W / 2, 218);
+    ctx.fillStyle = '#ffd6e6';
+    ctx.font = '600 34px Rubik, sans-serif';
+    ctx.fillText(r.mode === 'puzzle' ? `חידה ${r.puzzle + 1}: ${PUZZLES[r.puzzle].name}` : MODES[r.mode].name, W / 2, 280);
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,110,170,.9)';
+    ctx.shadowBlur = 26;
+    ctx.fillStyle = '#fff';
+    ctx.font = '800 120px Rubik, sans-serif';
+    ctx.direction = 'ltr';
+    ctx.fillText(r.reason === 'sprint-done' ? fmtTime(r.time) : fmt(r.score), W / 2, 420);
+    ctx.restore();
+    ctx.fillStyle = '#ffe9f1';
+    ctx.font = '600 32px Rubik, sans-serif';
+    ctx.fillText(`${r.lines} שורות · שלב ${r.level}`, W / 2, 480);
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 46px Rubik, sans-serif';
+    ctx.fillText('תנצחו אותי! 🌸', W / 2, 830);
+    ctx.fillStyle = 'rgba(255,230,240,.7)';
+    ctx.font = '400 26px Rubik, sans-serif';
+    ctx.fillText(dateKey().split('-').reverse().join('.'), W / 2, 880);
+    return c;
+  }
+
+  let shareCard = null;
+  function renderShare() {
+    shareStatus.textContent = '';
+    if (!lastResult) return;
+    shareCard = makeShareCard(lastResult);
+    shareImg.src = shareCard.toDataURL('image/png');
+    shareTextEl.value = shareText(lastResult);
+    shareNative.hidden = !navigator.share;
+  }
+
+  function cardBlob() {
+    return new Promise((res) => shareCard.toBlob(res, 'image/png'));
+  }
+
+  shareNative.addEventListener('click', async () => {
+    try {
+      const blob = await cardBlob();
+      const file = new File([blob], 'wood-tetris.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], text: shareTextEl.value });
+      else await navigator.share({ text: shareTextEl.value });
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      shareStatus.textContent = 'השיתוף לא זמין כאן. אפשר לשמור את התמונה או להעתיק את הטקסט.';
+    }
+  });
+
+  shareSave.addEventListener('click', async () => {
+    const blob = await cardBlob();
+    if (Cloud.downloads) {
+      try {
+        await Cloud.downloads.save({ filename: 'wood-tetris.png', data: blob });
+        shareStatus.textContent = 'התמונה נשמרה.';
+      } catch (e) {
+        shareStatus.textContent = e && e.code === 'declined' ? '' : 'לא הצלחנו לשמור כאן. אפשר ללחוץ לחיצה ארוכה על התמונה.';
+      }
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'wood-tetris.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    shareStatus.textContent = 'אם ההורדה לא התחילה, לחצו לחיצה ארוכה על התמונה ושמרו אותה.';
+  });
+
+  shareCopy.addEventListener('click', () => {
+    const text = shareTextEl.value;
+    const fallback = () => {
+      shareTextEl.focus();
+      shareTextEl.select();
+      shareStatus.textContent = 'הטקסט מסומן. העתיקו אותו ידנית.';
+    };
+    try {
+      navigator.clipboard.writeText(text).then(() => { shareStatus.textContent = 'הטקסט הועתק.'; }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  // ---- panel wiring
+  overlay.addEventListener('click', (e) => {
+    const go = e.target.closest('[data-goto]');
+    if (go) {
+      if (go.dataset.quit) quitToMenu();
+      showPanel(go.dataset.goto);
+      return;
+    }
+    const modeBtn = e.target.closest('[data-mode]');
+    if (modeBtn) {
+      if (modeBtn.dataset.mode === 'puzzle') showPanel('puzzles');
+      else newGame(modeBtn.dataset.mode);
+      return;
+    }
+    if (e.target.closest('.howto-btn')) openTutorial();
+    else if (e.target.closest('.music-toggle')) toggleMusic();
+    else if (e.target.closest('.sound-toggle')) toggleMute();
+  });
+  boardTabs.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-board]');
+    if (!b) return;
+    boardKind = b.dataset.board;
+    renderLeaders();
+  });
+  resumeBtn.addEventListener('click', togglePause);
+  againBtn.addEventListener('click', playAgain);
 
   // ---------------------------------------------------------------------------
   // Input
@@ -1804,7 +3453,7 @@
     if (act === 'mute') { toggleMute(); return; }
     if (act === 'music') { toggleMusic(); return; }
     if (state === 'menu' || state === 'over') {
-      if (act === 'drop' || act === 'start') start();
+      if ((act === 'start' || act === 'drop') && (currentPanel === 'menu' || currentPanel === 'over')) start();
       return;
     }
     if (state === 'pause') {
@@ -1861,6 +3510,7 @@
     }
     const act = KEYMAP[e.code];
     if (!act) return;
+    if (e.target && e.target.closest && e.target.closest('button, textarea') && (e.code === 'Space' || e.code === 'Enter')) return;
     e.preventDefault();
     if (e.repeat) return;
     Sound.init();
@@ -1871,7 +3521,6 @@
     if (act) release(act);
   });
 
-  startBtn.addEventListener('click', start);
   pauseBtn.addEventListener('click', () => {
     Sound.init();
     if (state === 'play' || state === 'pause') togglePause();
@@ -1885,9 +3534,9 @@
 
   function refreshAudioButtons() {
     muteBtn.textContent = Sound.muted ? '🔇 מושתק' : '🔊 צליל';
-    ovSoundBtn.textContent = Sound.muted ? '🔇 מושתק' : '🔊 צליל';
     musicBtn.textContent = Music.on ? '🎵 מוזיקה: פועלת' : '🎵 מוזיקה: כבויה';
-    ovMusicBtn.textContent = Music.on ? '🎵 מוזיקה' : '🎵 כבויה';
+    document.querySelectorAll('.sound-toggle').forEach((b) => { b.textContent = Sound.muted ? '🔇 מושתק' : '🔊 צליל'; });
+    document.querySelectorAll('.music-toggle').forEach((b) => { b.textContent = Music.on ? '🎵 מוזיקה' : '🎵 כבויה'; });
   }
 
   function toggleMute() {
@@ -1896,7 +3545,6 @@
     syncMusic();
   }
   muteBtn.addEventListener('click', toggleMute);
-  ovSoundBtn.addEventListener('click', toggleMute);
 
   function toggleMusic() {
     Music.on = !Music.on;
@@ -1904,7 +3552,6 @@
     syncMusic();
   }
   musicBtn.addEventListener('click', toggleMusic);
-  ovMusicBtn.addEventListener('click', toggleMusic);
 
   // ---------------------------------------------------------------------------
   // How-to-play walkthrough: opens by itself the first time, then from the menu
@@ -1949,7 +3596,6 @@
 
   tutNext.addEventListener('click', tutNextStep);
   $('tut-skip').addEventListener('click', closeTutorial);
-  howtoBtn.addEventListener('click', openTutorial);
 
   // ---------------------------------------------------------------------------
   // Touch gestures on the board: drag sideways to move, tap to rotate,
@@ -2041,18 +3687,29 @@
     if (state === 'play') togglePause();
   });
 
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', () => {
+    resize();
+    drawGardenBg();
+  });
 
   // ---------------------------------------------------------------------------
   // Boot
   // ---------------------------------------------------------------------------
+  loadProgress();
+  buildTiles(P.skin);
+  buildFlowers(P.flower);
+  knownUnlocks = new Set([...SKINS, ...FLOWERS].filter(isUnlocked).map((i) => i.id));
   resize();
   initAmbient();
-  updateUI();
+  document.body.classList.add('season-0');
   refreshAudioButtons();
+  updateUI();
+  showPanel('menu');
+  drawGardenBg();
   let tutorialSeen = false;
   try { tutorialSeen = localStorage.getItem(TUTORIAL_KEY) === '1'; } catch (e) { tutorialSeen = false; }
   if (!tutorialSeen) openTutorial();
+  initCloud();
   requestAnimationFrame(loop);
 
 })();
