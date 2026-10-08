@@ -876,3 +876,15 @@ button:focus-visible { outline: 3px solid #e2507f; outline-offset: 2px; }
 .name-field .small-btn { width: auto; flex: none; padding: 6px 10px; font-size: 13px; }
 .board-list { max-height: 52vh; overflow-y: auto; }
 .board-list span small { display: block; font-size: 10px; color: #6b4a30; }
+
+.install-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  border: 2px dashed rgba(226,80,127,.6);
+  border-radius: 10px;
+  font-weight: 700;
+  color: #7a2e3e;
+  background: rgba(255,240,245,.5);
+}

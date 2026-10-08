@@ -3735,6 +3735,26 @@
   frame.addEventListener('pointerup', endGesture);
   frame.addEventListener('pointercancel', endGesture);
 
+  // Android/Chrome: offer our own install button once the browser says the app can be installed
+  let installPrompt = null;
+  const installBtn = $('install-btn');
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    installBtn.hidden = false;
+  });
+  installBtn.addEventListener('click', async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    try { await installPrompt.userChoice; } catch (err) { /* dismissed */ }
+    installPrompt = null;
+    installBtn.hidden = true;
+  });
+  window.addEventListener('appinstalled', () => {
+    installBtn.hidden = true;
+    toast('📲 הותקן!', 'טטריס עץ נמצא עכשיו במסך הבית');
+  });
+
   window.addEventListener('blur', () => {
     held.left = held.right = held.down = false;
     dasDir = 0;
