@@ -1092,6 +1092,9 @@
   const overNews = $('over-news');
   const againBtn = $('again-btn');
   const resumeBtn = $('resume-btn');
+  const nameRow = $('name-row');
+  const nameInput = $('name-input');
+  const nameSave = $('name-save');
   const speedBar = $('speed-bar');
   const speedFill = $('speed-fill');
   const tutorial = $('tutorial');
@@ -1933,8 +1936,8 @@
     { id: 'tetris1', text: 'עשו טטריס', key: 'tetris', target: 1 },
     { id: 'tetris3', text: 'עשו 3 טטריסים', key: 'tetris', target: 3 },
     { id: 'tspin1', text: 'עשו טי-ספין', key: 'tspin', target: 1 },
-    { id: 'combo3', text: 'הגיעו לקומבו ×3', key: 'comboMax', target: 3, max: true },
-    { id: 'combo5', text: 'הגיעו לקומבו ×5', key: 'comboMax', target: 5, max: true },
+    { id: 'combo3', text: `הגיעו לקומבו ${ltr('×3')}`, key: 'comboMax', target: 3, max: true },
+    { id: 'combo5', text: `הגיעו לקומבו ${ltr('×5')}`, key: 'comboMax', target: 5, max: true },
     { id: 'score5k', text: 'השיגו 5,000 נקודות במשחק אחד', key: 'gameScore', target: 5000, max: true },
     { id: 'score15k', text: 'השיגו 15,000 נקודות במשחק אחד', key: 'gameScore', target: 15000, max: true },
     { id: 'fever', text: 'היכנסו למצב פיבר', key: 'fever', target: 1 },
@@ -1948,7 +1951,7 @@
   const DAILY_GOALS = [
     { key: 'lines', target: 25, text: 'נקו 25 שורות' },
     { key: 'tetris', target: 2, text: 'עשו 2 טטריסים' },
-    { key: 'comboMax', target: 4, text: 'הגיעו לקומבו ×4' },
+    { key: 'comboMax', target: 4, text: `הגיעו לקומבו ${ltr('×4')}` },
     { key: 'score', target: 8000, text: 'השיגו 8,000 נקודות' },
     { key: 'tspin', target: 1, text: 'עשו טי-ספין' },
   ];
@@ -2009,7 +2012,8 @@
   const P = {
     lifeLines: 0, lifeTetris: 0, lifeTspin: 0, games: 0, missionsDone: 0,
     best: { marathon: 0, zen: 0, sprint: 0 },
-    board: { marathon: [], sprint: [] },
+    board: { marathon: [], sprint: [], daily: [] },
+    nick: '',
     daily: { date: '', best: 0, done: false },
     puzzles: [],
     streak: { last: '', count: 0, best: 0 },
@@ -2033,6 +2037,9 @@
       const old = parseInt(localStorage.getItem('wood-tetris-best') || '0', 10) || 0;
       if (old > P.best.marathon) P.best.marathon = old;
     } catch (e) { /* start fresh */ }
+    for (const kind of Object.keys(P.board)) {
+      P.board[kind] = (P.board[kind] || []).map((r, i) => ({ id: r.id || 'old' + kind + i, n: r.n || 'אני', v: r.v, d: r.d }));
+    }
     if (!SKINS.some((s) => s.id === P.skin && isUnlocked(s))) P.skin = 'classic';
     if (!FLOWERS.some((f) => f.id === P.flower && isUnlocked(f))) P.flower = 'sakura';
     fillMissions();
@@ -2055,11 +2062,22 @@
     return s.last && daysBetween(s.last, dateKey()) <= 1 ? s.count : 0;
   }
 
+  // every finished game goes into this device's table under the last name used
+  const MAX_LOCAL = 100;
   function addLocal(kind, value) {
     const list = P.board[kind];
-    list.push({ v: value, d: dateKey() });
+    const entry = { id: Date.now().toString(36), n: P.nick || 'שחקן', v: value, d: dateKey() };
+    list.push(entry);
     list.sort((a, b) => (kind === 'sprint' ? a.v - b.v : b.v - a.v));
-    list.length = Math.min(list.length, 10);
+    if (list.length > MAX_LOCAL) list.length = MAX_LOCAL;
+    return entry;
+  }
+
+  function localRows(kind) {
+    const today = dateKey();
+    return P.board[kind]
+      .filter((r) => kind !== 'daily' || r.d === today)
+      .map((r) => ({ id: r.id, name: r.n, date: r.d, value: r.v }));
   }
 
   // ---------------------------------------------------------------------------
@@ -2197,6 +2215,7 @@
     const mine = Cloud.mine;
     const next = { ...mine };
     let changed = false;
+    if (fields.nick && fields.nick !== mine.nick) { next.nick = fields.nick; changed = true; }
     if (fields.marathon && fields.marathon > (mine.marathon || 0)) { next.marathon = fields.marathon; changed = true; }
     if (fields.sprint && (!mine.sprint || fields.sprint < mine.sprint)) { next.sprint = fields.sprint; changed = true; }
     if (fields.dailyDate && (mine.dailyDate !== fields.dailyDate || fields.dailyScore > (mine.dailyScore || 0))) {
@@ -2217,26 +2236,22 @@
   async function cloudTop(kind) {
     const col = Cloud.db.collection('scores');
     let q;
-    if (kind === 'marathon') q = col.where('marathon', '>', 0).orderBy('marathon', 'desc').limit(10);
-    else if (kind === 'sprint') q = col.where('sprint', '>', 0).orderBy('sprint', 'asc').limit(10);
-    else q = col.where('dailyDate', '==', dateKey()).orderBy('dailyScore', 'desc').limit(10);
+    if (kind === 'marathon') q = col.where('marathon', '>', 0).orderBy('marathon', 'desc').limit(100);
+    else if (kind === 'sprint') q = col.where('sprint', '>', 0).orderBy('sprint', 'asc').limit(100);
+    else q = col.where('dailyDate', '==', dateKey()).orderBy('dailyScore', 'desc').limit(100);
     const snap = await q.get();
     const ids = snap.docs.map((d) => d.id);
     const profiles = ids.length ? await Cloud.user.profiles(ids) : {};
     return snap.docs.map((d) => {
       const v = d.data();
       return {
-        name: (profiles[d.id] && profiles[d.id].name) || 'שחקן',
+        name: (typeof v.nick === 'string' && v.nick.slice(0, 16)) || (profiles[d.id] && profiles[d.id].name) || 'שחקן',
         value: kind === 'marathon' ? v.marathon : kind === 'sprint' ? v.sprint : v.dailyScore,
         me: d.id === Cloud.uid,
       };
     });
   }
 
-  function localTop(kind) {
-    if (kind === 'daily') return P.daily.date === dateKey() && P.daily.best ? [{ name: 'אני', value: P.daily.best, me: true }] : [];
-    return P.board[kind].map((r) => ({ name: 'אני · ' + r.d.slice(5).split('-').reverse().join('.'), value: r.v, me: true }));
-  }
 
   // ---------------------------------------------------------------------------
   // Game state
@@ -2250,6 +2265,8 @@
   let playTime = 0;
   let gs = { lines: 0, tetris: 0, tspin: 0, comboMax: 0, perfect: 0 };
   let lastResult = null;
+  let pending = null;       // the table entry of the game that just ended
+  let highlightId = null;   // row to highlight in the results table
   let dropAcc = 0, lockTimer = 0, lockResets = 0;
   let clearingRows = [], clearTimer = 0;
   const held = { left: false, right: false, down: false };
@@ -2419,6 +2436,7 @@
   function levelUp() {
     level++;
     levelTimer = 0;
+    updateModeHud();
     Music.setLevel(level);
     Sound.speedUp();
     setTimeout(() => popup('スピードアップ!', `שלב ${level} · מהירות עולה!`, 'level', 64), 450);
@@ -2684,12 +2702,14 @@
 
   function updateModeHud() {
     let t = '';
-    if (mode === 'sprint') {
-      t = `🏁 ${ltr(Math.min(lines, 40) + '/40')} שורות`;
+    if (mode === 'marathon') {
+      t = `マラソン מרתון · שלב ${level}`;
+    } else if (mode === 'sprint') {
+      t = `🏁 ספרינט · ${ltr(Math.min(lines, 40) + '/40')} שורות`;
     } else if (mode === 'daily') {
       const g = dailyGoal();
       const p = Math.min(dailyProgress(g), g.target);
-      t = `🎯 ${g.text} ${ltr(p + '/' + g.target)}${p >= g.target ? ' ✓' : ''}`;
+      t = `⏱ אתגר יומי · 🎯 ${g.text} ${ltr(p + '/' + g.target)}${p >= g.target ? ' ✓' : ''}`;
       if (p >= g.target && !dailyNotified && state !== 'menu') {
         dailyNotified = true;
         toast('🎯 המטרה היומית הושלמה!', g.text);
@@ -2700,10 +2720,10 @@
       const left = queue.length + (cur ? 1 : 0);
       t = `🧩 ${ltr(Math.min(lines, pz.goal) + '/' + pz.goal)} שורות · ${left} ${left === 1 ? 'חלק' : 'חלקים'}`;
     } else if (mode === 'zen') {
-      t = '禅 זן';
+      t = '禅 זן · בלי לחץ';
     }
     modeHud.textContent = t;
-    modeHud.classList.toggle('hidden', !t || state === 'menu');
+    modeHud.classList.toggle('hidden', !t || state === 'menu' || !grid);
   }
 
   // ---------------------------------------------------------------------------
@@ -2777,8 +2797,9 @@
       if (score > (P.best[mode] || 0)) { record = score > 0; P.best[mode] = score; }
       stats.push(['שלב', String(level)]);
     }
+    pending = null;
     if (mode === 'marathon') {
-      addLocal('marathon', score);
+      pending = { kind: 'marathon', entry: addLocal('marathon', score) };
       cloudSubmit({ marathon: score });
     }
     if (reason === 'sprint-done') {
@@ -2786,7 +2807,7 @@
       big = '速';
       const t = Math.round(playTime);
       if (!P.best.sprint || t < P.best.sprint) { record = true; P.best.sprint = t; }
-      addLocal('sprint', t);
+      pending = { kind: 'sprint', entry: addLocal('sprint', t) };
       cloudSubmit({ sprint: t });
       track('sprint', 1);
       stats.unshift(['זמן', fmtTime(t)]);
@@ -2801,6 +2822,7 @@
       const done = dailyProgress(g) >= g.target;
       if (done) P.daily.done = true;
       stats.push(['מטרה', `${g.text} ${done ? '✓' : '✗'}`]);
+      pending = { kind: 'daily', entry: addLocal('daily', score) };
       cloudSubmit({ dailyDate: today, dailyScore: P.daily.best });
       track('daily', 1);
     }
@@ -2813,6 +2835,10 @@
     if (reason === 'puzzle-fail') {
       title = 'לא הפעם';
       big = '惜';
+    }
+    if (pending) {
+      const list = localRows(pending.kind);
+      stats.push(['מקום בטבלה', `${list.findIndex((r) => r.id === pending.entry.id) + 1} מתוך ${list.length}`]);
     }
     if (gs.tetris) stats.push(['טטריסים', String(gs.tetris)]);
     if (gs.comboMax > 1) stats.push(['קומבו מרבי', '×' + gs.comboMax]);
@@ -2847,6 +2873,8 @@
       li.textContent = line;
       overNews.appendChild(li);
     }
+    nameRow.hidden = !pending;
+    nameInput.value = P.nick;
     againBtn.textContent = reason === 'puzzle-win' && puzzleIndex < PUZZLES.length - 1 ? 'לחידה הבאה'
       : reason === 'puzzle-fail' ? 'נסו שוב' : 'שוב';
     showPanel('over');
@@ -3279,8 +3307,8 @@
       if (kind !== boardKind || currentPanel !== 'leaders') return;
     }
     if (!rows) {
-      boardNote.textContent = 'השיאים שלך במכשיר הזה. כשמשחקים מהקישור המשותף מופיעה גם טבלה משותפת.';
-      rows = localTop(kind);
+      rows = localRows(kind);
+      boardNote.textContent = `${rows.length} תוצאות ששוחקו במכשיר הזה${kind === 'daily' ? ' היום' : ''}.`;
     }
     boardList.textContent = '';
     if (!rows.length) {
@@ -3290,18 +3318,26 @@
       boardList.appendChild(li);
       return;
     }
+    let mark = null;
     rows.forEach((r, i) => {
       const li = document.createElement('li');
-      if (r.me) li.className = 'me';
+      if (r.me || (highlightId && r.id === highlightId)) li.className = 'me';
+      if (highlightId && r.id === highlightId) mark = li;
       const rank = document.createElement('b');
       rank.textContent = i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1);
       const name = document.createElement('span');
       name.textContent = r.name;
+      if (r.date) {
+        const d = document.createElement('small');
+        d.textContent = r.date.slice(5).split('-').reverse().join('.');
+        name.appendChild(d);
+      }
       const val = document.createElement('em');
       val.textContent = kind === 'sprint' ? fmtTime(r.value) : fmt(r.value);
       li.append(rank, name, val);
       boardList.appendChild(li);
     });
+    if (mark) mark.scrollIntoView({ block: 'center' });
   }
 
   // ---- share card
@@ -3440,7 +3476,24 @@
     const b = e.target.closest('[data-board]');
     if (!b) return;
     boardKind = b.dataset.board;
+    highlightId = null;
     renderLeaders();
+  });
+  function saveName() {
+    if (!pending) return;
+    const name = nameInput.value.replace(/\s+/g, ' ').trim().slice(0, 16) || 'שחקן';
+    pending.entry.n = name;
+    P.nick = name;
+    saveProgress();
+    cloudSubmit({ nick: name });
+    boardKind = pending.kind;
+    highlightId = pending.entry.id;
+    nameInput.blur();
+    showPanel('leaders');
+  }
+  nameSave.addEventListener('click', saveName);
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveName(); }
   });
   resumeBtn.addEventListener('click', togglePause);
   againBtn.addEventListener('click', playAgain);
@@ -3510,7 +3563,8 @@
     }
     const act = KEYMAP[e.code];
     if (!act) return;
-    if (e.target && e.target.closest && e.target.closest('button, textarea') && (e.code === 'Space' || e.code === 'Enter')) return;
+    if (e.target && e.target.closest && e.target.closest('input, textarea')) return;
+    if (e.target && e.target.closest && e.target.closest('button') && (e.code === 'Space' || e.code === 'Enter')) return;
     e.preventDefault();
     if (e.repeat) return;
     Sound.init();

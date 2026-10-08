@@ -3,7 +3,7 @@
   --cream: #f7e6cc;
   --sakura: #ffb7cf;
   --sakura-deep: #e85d8f;
-  --board-h: min(calc(100vh - 120px), 880px);
+  --board-h: min(calc(100vh - 150px), 880px);
   --wall: none;
   --frame-wood: none;
   --panel-wood: none;
@@ -461,18 +461,20 @@ button { font-family: inherit; cursor: pointer; }
   animation: feverpulse .8s infinite alternate;
 }
 @keyframes feverpulse { to { box-shadow: 0 0 26px rgba(255,170,90,.95); } }
+.board-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
 .mode-hud {
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100% - 40px);
+  position: static;
+  height: 22px;
+  line-height: 18px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   color: #ffe9f1;
   background: rgba(30,14,6,.72);
   border: 1px solid rgba(255,190,215,.35);
 }
-.fever-badge.hidden, .mode-hud.hidden { display: none; }
+.fever-badge.hidden { display: none; }
+.mode-hud.hidden { visibility: hidden; }
 .board-frame.no-speed .speed-bar { visibility: hidden; }
 
 .board-frame.fever { box-shadow:
@@ -802,9 +804,9 @@ button:focus-visible { outline: 3px solid #e2507f; outline-offset: 2px; }
 
 /* ---------- phones: board as big as the screen allows ---------- */
 @media (max-width: 760px), (pointer: coarse) {
-  :root { --board-h: min(calc(100vh - 104px), calc((100vw - 28px) * 2)); }
+  :root { --board-h: min(calc(100vh - 162px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), calc((100vw - 28px) * 2)); }
   @supports (height: 100dvh) {
-    :root { --board-h: min(calc(100dvh - 104px), calc((100vw - 28px) * 2)); }
+    :root { --board-h: min(calc(100dvh - 162px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), calc((100vw - 28px) * 2)); }
   }
   body { justify-content: flex-start; padding-top: max(8px, env(safe-area-inset-top, 0px)); }
   .game {
@@ -821,7 +823,7 @@ button:focus-visible { outline: 3px solid #e2507f; outline-offset: 2px; }
   #garden-bg { display: none; }
   .mascot {
     position: absolute;
-    top: 76px;
+    top: 102px;
     left: 18px;
     z-index: 5;
     pointer-events: none;
@@ -833,7 +835,7 @@ button:focus-visible { outline: 3px solid #e2507f; outline-offset: 2px; }
   .bubble.pop { animation: none; }
   .board-frame::after { inset: 6px; }
   .fever-badge { top: 40px; }
-  .mode-hud { bottom: 12px; font-size: 12px; }
+  .mode-hud { font-size: 12px; }
   .board-wrap { justify-self: center; }
   .board-frame { padding: 6px; border-radius: 10px; }
   .overlay { inset: 6px; }
@@ -855,3 +857,22 @@ button:focus-visible { outline: 3px solid #e2507f; outline-offset: 2px; }
   .popup .jp { font-size: 32px; }
   .popup.big .jp { font-size: 48px; }
 }
+
+/* ---------- name entry + results table ---------- */
+.name-row { margin: 0 0 12px; text-align: right; }
+.name-row label { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 700; }
+.name-field { display: flex; gap: 6px; }
+.name-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 2px solid rgba(60,30,10,.3);
+  border-radius: 8px;
+  font: 600 16px 'Rubik', sans-serif;
+  color: var(--ink);
+  background: rgba(255,250,240,.9);
+}
+.name-field input:focus { outline: none; border-color: #e2507f; }
+.name-field .small-btn { width: auto; flex: none; padding: 6px 10px; font-size: 13px; }
+.board-list { max-height: 52vh; overflow-y: auto; }
+.board-list span small { display: block; font-size: 10px; color: #6b4a30; }

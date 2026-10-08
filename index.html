@@ -35,13 +35,13 @@
     </section>
 
     <section class="board-wrap">
+      <div class="mode-hud hidden" id="mode-hud" dir="rtl"></div>
       <div class="board-frame" id="frame">
         <i class="nail tl"></i><i class="nail tr"></i><i class="nail bl"></i><i class="nail br"></i>
         <div class="speed-bar" id="speed-bar" aria-hidden="true"><i id="speed-fill"></i></div>
         <canvas id="board"></canvas>
         <div class="combo-badge jp hidden" id="combo-badge" dir="ltr" aria-live="polite"></div>
         <div class="fever-badge hidden" id="fever-badge" dir="rtl"></div>
-        <div class="mode-hud hidden" id="mode-hud" dir="rtl"></div>
         <div class="overlay" id="overlay" dir="rtl">
           <div class="sign" id="sign">
 
@@ -98,6 +98,13 @@
               <div class="record hidden" id="over-record">שיא חדש! 🎉</div>
               <dl class="over-stats" id="over-stats"></dl>
               <ul class="over-news" id="over-news"></ul>
+              <div class="name-row" id="name-row" hidden>
+                <label for="name-input">השם שלך בטבלה</label>
+                <div class="name-field">
+                  <input id="name-input" type="text" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="איך לקרוא לך?">
+                  <button class="small-btn" id="name-save" type="button">🏆 שמירה וטבלה</button>
+                </div>
+              </div>
               <button class="primary-btn" id="again-btn" type="button">שוב</button>
               <div class="ov-row">
                 <button class="small-btn" data-goto="share" type="button">📤 שיתוף</button>
