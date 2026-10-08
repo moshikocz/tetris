@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>טטריס עץ · 桜</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&family=Yusei+Magic&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="ambient" aria-hidden="true"></canvas>
+
+  <main class="game" dir="ltr">
+    <header class="title plaque" dir="rtl">
+      <span class="jp">木のテトリス</span>
+      <h1>טטריס עץ</h1>
+    </header>
+
+    <section class="hold plaque" dir="rtl">
+      <h2>החזקה <span class="jp">保留</span></h2>
+      <canvas id="hold" width="120" height="80"></canvas>
+    </section>
+
+    <section class="stats plaque" dir="rtl">
+      <div class="stat"><span>ניקוד</span><b id="score">0</b></div>
+      <div class="stat"><span>שיא</span><b id="best">0</b></div>
+      <div class="stat"><span>שלב</span><b id="level">1</b></div>
+      <div class="stat"><span>שורות</span><b id="lines">0</b></div>
+    </section>
+
+    <section class="board-wrap">
+      <div class="board-frame" id="frame">
+        <i class="nail tl"></i><i class="nail tr"></i><i class="nail bl"></i><i class="nail br"></i>
+        <canvas id="board"></canvas>
+        <div class="overlay" id="overlay" dir="rtl">
+          <div class="sign">
+            <div class="jp big">桜</div>
+            <h2 id="overlay-title">טטריס עץ</h2>
+            <p id="overlay-text">נקו שורות ותנו לפריחת הדובדבן להתפוצץ על המסך</p>
+            <button id="start-btn" type="button">התחל</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="next plaque" dir="rtl">
+      <h2>הבא <span class="jp">次</span></h2>
+      <canvas id="next" width="120" height="260"></canvas>
+    </section>
+
+    <section class="help plaque" dir="rtl">
+      <h2>שליטה</h2>
+      <ul>
+        <li><kbd>←</kbd><kbd>→</kbd> הזזה</li>
+        <li><kbd>↑</kbd><kbd>X</kbd> סיבוב</li>
+        <li><kbd>Z</kbd> סיבוב נגדי</li>
+        <li><kbd>↓</kbd> ירידה רכה</li>
+        <li><kbd>רווח</kbd> הפלה</li>
+        <li><kbd>C</kbd> החזקה</li>
+        <li><kbd>P</kbd> השהיה · <kbd>M</kbd> צליל</li>
+      </ul>
+      <button id="mute-btn" class="small-btn" type="button">🔊 צליל</button>
+    </section>
+  </main>
+
+  <nav class="touch" dir="ltr" aria-label="שליטה במגע">
+    <button data-act="hold" type="button">⇄</button>
+    <button data-act="left" type="button">◀</button>
+    <button data-act="down" type="button">▼</button>
+    <button data-act="right" type="button">▶</button>
+    <button data-act="rotate" type="button">⟳</button>
+    <button data-act="drop" type="button">⤓</button>
+    <button data-act="pause" type="button">❚❚</button>
+  </nav>
+
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div id="popups" dir="rtl"></div>
+  <script src="js/game.js"></script>
+</body>
+</html>
