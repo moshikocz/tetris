@@ -299,7 +299,7 @@ button { font-family: inherit; cursor: pointer; }
   transform: translate(-50%, -50%);
   text-align: center;
   white-space: nowrap;
-  animation: pop 1.6s cubic-bezier(.2,1.4,.4,1) forwards;
+  animation: pop 1.25s cubic-bezier(.2,1.4,.4,1) forwards;
 }
 .popup .jp {
   direction: ltr;

@@ -1441,58 +1441,74 @@
     return boardCanvas.getBoundingClientRect();
   }
 
+  // Celebrations stay off the playfield: blossoms burst outward from the board's
+  // edges and from above it, so the player can keep playing through them.
   function burstRows(rows, big, intensity = 1) {
     const rect = boardRect();
     const cellH = rect.height / ROWS;
     const scale = (reduceMotion ? 0.35 : 1) * intensity;
     rows.forEach((r, ri) => {
       const y = rect.top + (r - HIDDEN + 0.5) * cellH;
-      const nb = Math.round(6 * scale) || 1;
-      for (let i = 0; i < nb; i++) {
-        const x = rect.left + rect.width * ((i + 0.5) / nb) + rand(-10, 10);
-        addBlossom(x, y, { delay: ri * 0.05 + i * 0.025 });
+      const nb = Math.max(1, Math.round(3 * scale));
+      for (const side of [-1, 1]) {
+        const x = side < 0 ? rect.left : rect.right;
+        for (let i = 0; i < nb; i++) {
+          addBlossom(x + side * rand(4, 16), y + rand(-cellH, cellH), {
+            vx: side * rand(140, 300), vy: rand(-380, -160), g: 520,
+            size: rand(30, 52), life: rand(1.1, 1.6), delay: ri * 0.05 + i * 0.04,
+          });
+        }
+        for (let i = 0; i < Math.round(5 * scale); i++) {
+          addPetal(x, y + rand(-8, 8), { vx: side * rand(120, 260), vy: rand(-220, -40), life: rand(1.6, 2.4), delay: ri * 0.05 });
+        }
       }
-      for (let i = 0; i < Math.round(12 * scale); i++) {
-        addPetal(rect.left + rand(0, rect.width), y + rand(-8, 8), { delay: ri * 0.05 });
-      }
-      for (let i = 0; i < Math.round(6 * scale); i++) {
-        addSparkle(rect.left + rand(0, rect.width), y + rand(-cellH, cellH), rand(0, 0.3));
+      // a quick shimmer along the row being removed
+      for (let i = 0; i < Math.round(4 * scale); i++) {
+        addSparkle(rect.left + rand(0, rect.width), y + rand(-cellH / 2, cellH / 2), rand(0, 0.15));
       }
     });
 
     if (big) {
+      // the big bloom opens above the board, and its ring flies up and out
       const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height * 0.45;
+      const cy = rect.top - Math.min(rect.width * 0.12, 40);
       parts.push({
         kind: 'big', img: bigBlossom, x: cx, y: cy, vx: 0, vy: 0, g: 0,
-        rot: 0, vr: 0.8, size: Math.min(rect.width * 1.1, 360), age: 0, life: 2.4, delay: 0,
+        rot: 0, vr: 0.8, size: Math.min(rect.width * 0.45, 170), age: 0, life: 1.2, delay: 0,
       });
-      const ring = Math.round(14 * scale);
+      const ring = Math.round(12 * scale);
       for (let i = 0; i < ring; i++) {
-        const a = (i / ring) * Math.PI * 2;
-        const sp = rand(380, 520);
+        const a = Math.PI + (i / (ring - 1 || 1)) * Math.PI;   // upper half only
+        const sp = rand(360, 500);
         addBlossom(cx, cy, {
-          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, g: 300,
-          size: rand(46, 74), life: rand(2, 2.6), delay: 0.12,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 260,
+          size: rand(40, 64), life: rand(1.5, 2), delay: 0.1,
         });
       }
-      for (let i = 0; i < Math.round(60 * scale); i++) {
-        addPetal(rand(0, vw), rand(-80, -10), { vx: rand(-40, 40), vy: rand(20, 120), life: rand(4, 6), delay: rand(0, 1.2) });
+      // petal rain only in the gutters beside the board
+      const gutters = [[0, rect.left], [rect.right, vw]].filter(([a0, a1]) => a1 - a0 > 8);
+      if (gutters.length) {
+        for (let i = 0; i < Math.round(30 * scale); i++) {
+          const [a0, a1] = gutters[i % gutters.length];
+          addPetal(rand(a0, a1), rand(-80, -10), { vx: rand(-20, 20), vy: rand(30, 120), life: rand(3, 5), delay: rand(0, 1) });
+        }
       }
-      for (let i = 0; i < Math.round(16 * scale); i++) {
-        addSparkle(cx + rand(-150, 150), cy + rand(-150, 150), rand(0, 0.8));
+      for (let i = 0; i < Math.round(10 * scale); i++) {
+        addSparkle(cx + rand(-120, 120), cy + rand(-60, 30), rand(0, 0.6));
       }
     }
   }
 
-  // lilac pinwheel of blossoms around a T-spin
+  // lilac pinwheel for a T-spin, launched sideways off the nearer edge of the board
   function spinBurst(cx, cy) {
-    const n = reduceMotion ? 4 : 10;
+    const rect = boardRect();
+    const side = cx < rect.left + rect.width / 2 ? -1 : 1;
+    const x = side < 0 ? rect.left : rect.right;
+    const n = reduceMotion ? 3 : 7;
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      addBlossom(cx, cy, {
-        img: spinBlossoms[i % 2], vx: Math.cos(a) * 320, vy: Math.sin(a) * 320 - 60,
-        g: 200, size: rand(36, 54), life: 1.6,
+      addBlossom(x, cy, {
+        img: spinBlossoms[i % 2], vx: side * rand(200, 360), vy: rand(-360, -120),
+        g: 300, size: rand(34, 50), life: 1.4,
       });
     }
   }
@@ -1517,6 +1533,10 @@
     }
   }
 
+  // the playfield in screen pixels, refreshed once per frame
+  let fieldRect = null;
+  const overField = (x, y) => fieldRect && x > fieldRect.left && x < fieldRect.right && y > fieldRect.top && y < fieldRect.bottom;
+
   function drawPart(ctx, p) {
     const t = p.age / p.life;
     let alpha = t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
@@ -1535,6 +1555,7 @@
       s *= 0.6 + 0.4 * Math.abs(Math.sin(p.age * 12 + p.phase));
       alpha = Math.sin(t * Math.PI);
     }
+    if (p.kind !== 'sparkle' && overField(p.x, p.y)) alpha *= p.kind === 'big' ? 0.35 : 0.18;
     if (s <= 0.5 || alpha <= 0) return;
     ctx.save();
     ctx.globalAlpha = clamp(alpha, 0, 1);
@@ -1617,7 +1638,7 @@
     document.body.classList.remove('season-0', 'season-1', 'season-2', 'season-3');
     document.body.classList.add('season-' + i);
     initAmbient();
-    if (announce) popup(SEASON_NAMES[i].jp, SEASON_NAMES[i].he, 'season', 30);
+    if (announce) popup(SEASON_NAMES[i].jp, SEASON_NAMES[i].he, 'season', 22);
   }
 
   // ---------------------------------------------------------------------------
@@ -1878,6 +1899,7 @@
 
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     fctx.clearRect(0, 0, vw, vh);
+    fieldRect = state === 'play' || state === 'clearing' ? boardCanvas.getBoundingClientRect() : null;
     // big blooms first so the smaller ones fly over them
     for (const p of parts) if (p.kind === 'big' && p.delay <= 0) drawPart(fctx, p);
     for (const p of parts) if (p.kind !== 'big' && p.delay <= 0) drawPart(fctx, p);
@@ -1902,7 +1924,7 @@
       el.appendChild(s);
     }
     popups.appendChild(el);
-    setTimeout(() => el.remove(), 1700);
+    setTimeout(() => el.remove(), 1350);
   }
 
   // ---------------------------------------------------------------------------
@@ -2440,7 +2462,7 @@
     updateModeHud();
     Music.setLevel(level);
     Sound.speedUp();
-    setTimeout(() => popup('スピードアップ!', `שלב ${level} · מהירות עולה!`, 'level', 64), 450);
+    setTimeout(() => popup('スピードアップ!', `שלב ${level} · מהירות עולה!`, 'level', 30), 450);
     speedBar.classList.remove('flash');
     void speedBar.offsetWidth;
     speedBar.classList.add('flash');
@@ -2484,7 +2506,7 @@
     feverBadge.classList.remove('hidden');
     Sound.feverStart();
     haptic([30, 30, 30, 30, 80]);
-    setTimeout(() => popup('フィーバー!', ['מצב פיבר!', `ניקוד ${ltr('×2')}`], 'level fever', 30), 300);
+    setTimeout(() => popup('フィーバー!', ['מצב פיבר!', `ניקוד ${ltr('×2')}`], 'level fever', 24), 1300);
     react('fever', 'excited');
     track('fever', 1);
   }
@@ -2656,7 +2678,7 @@
     if (jp) {
       tags.push(ltr('+' + pts.toLocaleString()));
       const cls = (n === 4 || perfect) ? 'big' : (tspin ? 'spin' : '');
-      popup(jp, tags, cls, 42);
+      popup(jp, tags, cls, 13);
     }
     updateComboBadge();
     updateUI();
@@ -3134,7 +3156,10 @@
     updateParts(dtMs / 1000);
     updateAmbient(dtMs / 1000);
     if (fever > 0 && !reduceMotion && Math.random() < 0.18) {
-      addPetal(rand(0, vw), -10, { vx: rand(-30, 30), vy: rand(40, 120), life: 4 });
+      const r = boardRect();
+      const left = Math.random() < 0.5;
+      const a0 = left ? 0 : r.right, a1 = left ? r.left : vw;
+      if (a1 - a0 > 8) addPetal(rand(a0, a1), -10, { vx: rand(-15, 15), vy: rand(40, 120), life: 4 });
     }
     renderBoard(now);
     renderSide();
